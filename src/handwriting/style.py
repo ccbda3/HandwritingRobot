@@ -25,7 +25,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 from itertools import pairwise
 
-from handwriting.stroke import Point, Stroke, StrokeSet
+from handwriting import curve
+from handwriting.stroke import Stroke, StrokeSet
 
 DEFAULT_RESAMPLE_STEP = 0.02
 
@@ -115,45 +116,21 @@ def resample(stroke: Stroke, step: float = DEFAULT_RESAMPLE_STEP) -> Stroke:
 
     不同设备的采样率可能相差三倍以上（60 Hz 到 240 Hz），
     直接在原始点上算转折角会让高采样率设备的噪声被放大。
+
+    几何处理委托给 :func:`handwriting.curve.resample`，本函数只负责
+    ``Stroke`` 容器的包装。
     """
-    if step <= 0.0:
-        raise ValueError(f"step 必须为正，收到 {step}")
-
-    points = stroke.points
-    if len(points) < 2:
-        return stroke
-
-    out: list[Point] = [points[0]]
-    carry = 0.0
-    for a, b in pairwise(points):
-        seg = math.hypot(b.x - a.x, b.y - a.y)
-        if seg <= _EPS:
-            continue
-        travelled = 0.0
-        while carry + (seg - travelled) >= step:
-            travelled += step - carry
-            ratio = travelled / seg
-            out.append(
-                Point(
-                    a.x + (b.x - a.x) * ratio,
-                    a.y + (b.y - a.y) * ratio,
-                    a.pressure + (b.pressure - a.pressure) * ratio,
-                    int(a.t + (b.t - a.t) * ratio),
-                )
-            )
-            carry = 0.0
-        carry += seg - travelled
-
-    last = points[-1]
-    # 残段太短就不补端点：长度 1e-16 的末段会让转折角算出完全错误的数值，
-    # 而这种残段在浮点累积下几乎必然出现（例如 25 × 0.02 ≠ 0.5）。
-    if carry > _MIN_SEGMENT and (out[-1].x != last.x or out[-1].y != last.y):
-        out.append(last)
-    return Stroke(out)
+    return Stroke(curve.resample(stroke.points, step))
 
 
 def _slant_deg(strokes: Sequence[Stroke]) -> float:
-    """只统计偏竖直的笔段，按竖直长度加权。"""
+    """主倾角，**右倾为正**。只统计偏竖直的笔段，按竖直长度加权。
+
+    符号约定容易搞反，这里写清楚：右倾的字（像斜体）竖直笔画是
+    「顶偏右、底偏左」，沿笔画向下 dx < 0、dy > 0。
+    而 ``atan2(dx, dy)`` 在这种情况下给出负值，因此需要取反，
+    才能让「右倾为正」成立。
+    """
     numerator = 0.0
     denominator = 0.0
     for stroke in strokes:
@@ -163,7 +140,7 @@ def _slant_deg(strokes: Sequence[Stroke]) -> float:
             if abs(dy) <= abs(dx):
                 continue
             weight = abs(dy)
-            numerator += math.degrees(math.atan2(dx, dy)) * weight
+            numerator += -math.degrees(math.atan2(dx, dy)) * weight
             denominator += weight
     return numerator / denominator if denominator > _EPS else 0.0
 

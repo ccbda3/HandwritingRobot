@@ -175,6 +175,32 @@ def _distance(x1: float, y1: float, x2: float, y2: float) -> float:
     return ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
 
 
+def char_origin(row: int, col: int, settings: PlotSettings) -> tuple[float, float]:
+    """字格左上角在机床坐标系中的位置（mm）。
+
+    G 代码生成与 SVG 预览共用这一个函数。若两边各自算一遍，
+    预览图就会与机器实际画出来的位置不一致 —— 而预览的全部意义
+    就是「不动机器也能看到机器会画成什么样」。
+    """
+    return (
+        settings.margin_x_mm + col * (settings.char_size_mm + settings.char_gap_mm),
+        settings.margin_y_mm + row * (settings.char_size_mm + settings.line_gap_mm),
+    )
+
+
+def page_size(row_count: int, settings: PlotSettings) -> tuple[float, float]:
+    """整页幅面尺寸（mm）。"""
+    cols = max(1, settings.chars_per_line)
+    rows = max(1, row_count)
+    width = (
+        settings.margin_x_mm * 2 + cols * settings.char_size_mm + (cols - 1) * settings.char_gap_mm
+    )
+    height = (
+        settings.margin_y_mm * 2 + rows * settings.char_size_mm + (rows - 1) * settings.line_gap_mm
+    )
+    return width, height
+
+
 def strokes_to_gcode(
     rows: Iterable[Sequence[StrokeSet]],
     settings: PlotSettings | None = None,
@@ -197,8 +223,7 @@ def strokes_to_gcode_with_stats(
 
     for row_index, row in enumerate(rows):
         for col_index, stroke_set in enumerate(row):
-            origin_x = s.margin_x_mm + col_index * (s.char_size_mm + s.char_gap_mm)
-            origin_y = s.margin_y_mm + row_index * (s.char_size_mm + s.line_gap_mm)
+            origin_x, origin_y = char_origin(row_index, col_index, s)
             for stroke in stroke_set.strokes:
                 writer.plot_stroke(stroke.points, (origin_x, origin_y), s.char_size_mm)
 

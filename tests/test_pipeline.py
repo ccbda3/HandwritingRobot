@@ -38,7 +38,8 @@ def synthetic_char(index: int, char: str, slant: float = 0.0, strokes: int = 4) 
             pressure = round(0.25 + 0.5 * math.sin(ratio * math.pi), 4)
             if kind == 0:  # 竖：倾斜施加在竖直笔画上
                 y = 0.15 + 0.7 * ratio
-                x = lane + slant * (y - 0.5)
+                # 正 slant = 右倾 = 顶偏右、底偏左
+                x = lane - slant * (y - 0.5)
             elif kind == 1:  # 横
                 x = 0.15 + 0.7 * ratio
                 y = lane

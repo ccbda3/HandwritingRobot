@@ -12,13 +12,15 @@
 
 ## 当前状态
 
-**Pre-Alpha。** 采集链路与轨迹 → G 代码链路已跑通，风格模型尚未开始。
+**Pre-Alpha。** 采集链路、字形 → G 代码链路已跑通，风格模型尚未开始。
 
 | 模块 | 状态 |
 |---|---|
 | 笔迹采集器（网页） | 可用 |
 | 风格特征提取 | 可用 |
 | 主动选字（覆盖度驱动） | 可用 |
+| 字形骨架 → 轨迹 → G 代码 | 可用 |
+| SVG 预览 | 可用 |
 | 轨迹数据结构（C++ / Python） | 可用 |
 | 数据集读取与质检 | 可用 |
 | G 代码生成 | 可用（基础版） |
@@ -28,7 +30,28 @@
 
 ## 快速开始
 
-### 1. 采集你的笔迹
+### 1. 先看字能不能写出来（不需要模型，不需要硬件）
+
+```bash
+pip install -e ".[dev]"
+
+# 预取字形数据（需要联网，之后可离线使用）
+python -m handwriting.cli preload "永字八法"
+
+# 生成 G 代码 + SVG 预览
+python -m handwriting.cli render "永字八法" -o yong.nc --svg yong.svg
+
+# 只看统计
+python -m handwriting.cli render "永字八法" --dry-run
+```
+
+字形来自标准笔顺库（[Make Me a Hanzi](https://github.com/skishore/makemeahanzi)
+派生的 hanzi-writer-data），**medians 字段自带正确笔顺**。
+用浏览器打开导出的 SVG 就能看到机器会画成什么样，不必先接上机器。
+
+管线细节、坐标系标定与已知限制见 [docs/glyph-pipeline.md](docs/glyph-pipeline.md)。
+
+### 2. 采集你的笔迹
 
 用浏览器打开 [`capture/index.html`](capture/index.html)，按提示写 150 个汉字，导出 JSON。
 零依赖、可离线，手机 / 平板 / 数位板 / 电脑都能用。
@@ -50,7 +73,7 @@
 | 手机触屏 + 电容笔 | 20–50 元 | 60–120 Hz | 无 |
 | 鼠标 | 0 | 60–125 Hz | 无（仅能验证链路） |
 
-### 2. 构建 C++ 核心库
+### 3. 构建 C++ 核心库
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -66,11 +89,12 @@ cmake -S . -B build -DHR_BUILD_APP=OFF
 
 Qt 前端优先使用 Qt6；找不到时自动回退 Qt5.15，便于本地开发机快速构建。
 
-### 3. Python 侧（数据集与训练）
+### 4. Python 侧（数据集与训练）
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest                      # 227 个用例，联网用例默认跳过
+pytest --run-network -m network   # 验证真实字形数据
 ruff check src tests
 ```
 
@@ -83,15 +107,16 @@ HandwritingRobot/
 │   ├── src/
 │   └── tests/
 ├── app/                  Qt 桌面前端（直接链接 core）
-├── src/handwriting/      Python：数据集、训练、实验
+├── src/handwriting/      Python：字形、渲染、风格、数据集、G 代码、CLI
 ├── capture/index.html    笔迹采集器
 ├── benchmarks/           性能基准（C++ 与 Python 同负载对比）
 ├── scripts/              开发期工具（生成字表顺序等）
 ├── docs/
-│   ├── architecture.md   系统架构与语言分工
-│   ├── data-format.md    笔迹数据格式规范
-│   └── adr/              架构决策记录
-├── data/                 本地采集数据（**不入库**）
+│   ├── architecture.md    系统架构与语言分工
+│   ├── glyph-pipeline.md  字形 → 轨迹 → G 代码管线
+│   ├── data-format.md     笔迹数据格式规范
+│   └── adr/               架构决策记录
+├── data/                 本地采集数据与导出（**不入库**）
 └── tests/                Python 测试
 ```
 

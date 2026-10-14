@@ -9,6 +9,15 @@
 
 ### 新增
 
+- **字形管线**：文本 → 标准笔顺骨架 → 归一化轨迹 → G 代码 → SVG 预览。
+  这条链路不依赖任何 AI 模型，可先把机械精度、笔压一致性、串口时序这些
+  真正的风险暴露出来。详见 [docs/glyph-pipeline.md](docs/glyph-pipeline.md)
+  - `handwriting.glyph`：从 hanzi-writer-data 按需下载笔画中心线并本地缓存；
+    `medians` 字段自带**正确的笔顺**
+  - `handwriting.curve`：Catmull-Rom 样条插值 + 按弧长重采样
+  - `handwriting.render`：坐标转换、倾斜、抖动、笔压合成、时序合成
+  - `handwriting.preview`：SVG 预览，与 G 代码共用同一套版面计算
+  - `handwriting.cli`：`render` 与 `preload` 子命令
 - **风格特征提取** `handwriting.style`：从轨迹中提取 14 维风格向量
   （倾角、宽高比、墨迹密度、直线度、转折角、折笔锐度与密度、笔画长度变异、
   压感均值/标准差/提按、书写速度均值/标准差、抬笔比），
@@ -20,10 +29,9 @@
   按结构着色的进度网格、8/40/150 字里程碑、导出新增 `strokeStartT` 字段
 - `scripts/build_curriculum.py`：生成字表顺序与元数据常量
 - C++17 核心库 `core/`：轨迹数据结构、几何变换、等比归一化、G 代码生成
-- Python 侧 `src/handwriting/`：轨迹数据结构、数据集读取与质量体检、G 代码生成
 - 性能基准：`benchmarks/cpp/` 与 `benchmarks/python/` 使用相同合成负载，可直接对比
-- 单元测试：C++ 2 个测试程序（CTest）、Python 119 个用例
-- 文档：系统架构、数据格式规范、5 条架构决策记录
+- 单元测试：C++ 2 个测试程序（CTest）、Python 227 个用例（含 5 个联网用例）
+- 文档：系统架构、字形管线、数据格式规范、5 条架构决策记录
 - 工程规范：Apache-2.0 许可、`.editorconfig`、`.gitattributes`、`.clang-format`、
   pre-commit 钩子、GitHub Actions CI、Issue/PR 模板
 
@@ -42,6 +50,12 @@
 
 ### 修复
 
+- **倾斜角符号与文档不一致**：`slant_deg` 文档写「右倾为正」，
+  但实现用 `atan2(dx, dy)` 会对右倾给出负值。右倾竖笔是顶偏右、底偏左，
+  沿笔画向下 dx < 0，因此需要取反。已在 `style` 与 `render` 两侧统一，
+  并加跨模块一致性测试防回归
+- **字形下载无重试**：CDN 偶发断连（`Remote end closed connection`）是常态，
+  预取 150 字时几乎必然遇到。改为指数退避重试 3 次，404 不重试
 - 单点笔画（点）此前不产生任何 G 代码，现在会落笔、驻留 0.05 s、抬笔，
   在纸面留下墨点
 - 重采样末段短于 1e-6 时不再补端点。此前浮点累积（如 25 × 0.02 ≠ 0.5）
@@ -49,7 +63,7 @@
 
 ### 安全
 
-- `.gitignore` 强制忽略 `data/**` 下的用户笔迹数据与模型权重，
-  避免生物特征数据进入公开仓库
+- `.gitignore` 强制忽略 `data/**` 下的用户笔迹数据、模型权重，
+  以及 `.cache/glyphs` 下的字形数据（派生自 Arphic PL 字体，不随仓库分发）
 
 [未发布]: https://github.com/Whaoy/HandwritingRobot/commits/main

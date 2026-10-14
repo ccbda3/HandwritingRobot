@@ -31,6 +31,9 @@ dev = [
   "pre-commit>=4.0",
 ]
 
+[project.scripts]
+handwriting = "handwriting.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/Whaoy/HandwritingRobot"
 Issues = "https://github.com/Whaoy/HandwritingRobot/issues"
@@ -43,6 +46,9 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q --strict-markers"
 filterwarnings = ["error"]
+markers = [
+  "network: 需要联网的测试，默认跳过（用 --run-network 启用）",
+]
 
 [tool.coverage.run]
 source = ["src/handwriting"]

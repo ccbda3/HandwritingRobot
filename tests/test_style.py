@@ -45,9 +45,10 @@ class TestResample:
         result = resample(line(0.0, 0.0, 0.01, 0.0), step=0.1)
         assert len(result) == 2
 
-    def test_single_point_stroke_is_untouched(self) -> None:
+    def test_single_point_stroke_is_unchanged(self) -> None:
+        # 断言内容相同而非对象同一 —— 是否返回原对象属于实现细节
         stroke = Stroke([Point(0.5, 0.5)])
-        assert resample(stroke) is stroke
+        assert resample(stroke).points == stroke.points
 
     def test_rejects_non_positive_step(self) -> None:
         with pytest.raises(ValueError, match="step 必须为正"):
@@ -66,13 +67,17 @@ class TestSlant:
         assert features.slant_deg == pytest.approx(0.0, abs=0.5)
 
     def test_right_leaning_stroke_is_positive(self) -> None:
-        # dx=0.1, dy=1.0 => atan2(0.1, 1.0) = 5.71°
-        features = extract(StrokeSet([line(0.5, 0.0, 0.6, 1.0)]))
-        assert features.slant_deg == pytest.approx(math.degrees(math.atan2(0.1, 1.0)), abs=0.5)
+        """右倾 = 顶偏右、底偏左，形状像斜体的竖画（/）。
+
+        注意方向：笔画从 (0.6, 0) 走到 (0.5, 1)，即沿笔画向下时 dx < 0。
+        """
+        features = extract(StrokeSet([line(0.6, 0.0, 0.5, 1.0)]))
         assert features.slant_deg > 0
+        assert features.slant_deg == pytest.approx(math.degrees(math.atan2(0.1, 1.0)), abs=0.5)
 
     def test_left_leaning_stroke_is_negative(self) -> None:
-        features = extract(StrokeSet([line(0.6, 0.0, 0.5, 1.0)]))
+        # 顶偏左、底偏右
+        features = extract(StrokeSet([line(0.5, 0.0, 0.6, 1.0)]))
         assert features.slant_deg < 0
 
     def test_horizontal_only_glyph_has_zero_slant(self) -> None:

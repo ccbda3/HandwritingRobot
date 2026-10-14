@@ -43,7 +43,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -57,7 +57,20 @@ EM_MAX_X = 1024.0
 EM_MAX_Y = 900.0
 EM_SIZE = EM_MAX_X - EM_MIN_X
 
-DEFAULT_BASE_URL = "https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/"
+DEFAULT_BASE_URLS: tuple[str, ...] = (
+    "https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/",
+    "https://unpkg.com/hanzi-writer-data@2.0.1/",
+)
+"""镜像列表，按顺序尝试。
+
+实测单源不可靠：jsdelivr 会偶发 ``Remote end closed connection``，
+预取 150 个字时几乎必然遇到。多一个镜像就多一层保险。
+（``fastly.jsdelivr.net`` 实测在本机 TLS 握手失败，故未采用。）
+"""
+
+DEFAULT_BASE_URL = DEFAULT_BASE_URLS[0]
+"""向后兼容用的默认单源地址。"""
+
 DEFAULT_CACHE_DIR = Path(".cache") / "glyphs"
 
 DEFAULT_RESAMPLE_STEP = 0.01
@@ -154,7 +167,8 @@ class HanziWriterSource:
     def __init__(
         self,
         cache_dir: str | Path = DEFAULT_CACHE_DIR,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str | None = None,
+        base_urls: Sequence[str] | None = None,
         timeout: float = 30.0,
         offline: bool = False,
         retries: int = 3,
@@ -163,13 +177,26 @@ class HanziWriterSource:
     ) -> None:
         if retries < 1:
             raise ValueError(f"retries 必须 ≥ 1，收到 {retries}")
+
+        if base_urls is None:
+            sources = (base_url,) if base_url is not None else DEFAULT_BASE_URLS
+        else:
+            sources = tuple(base_urls)
+        if not sources:
+            raise ValueError("至少需要一个字形数据源地址")
+
         self.cache_dir = Path(cache_dir)
-        self.base_url = base_url if base_url.endswith("/") else base_url + "/"
+        self.base_urls = tuple(url if url.endswith("/") else url + "/" for url in sources)
         self.timeout = timeout
         self.offline = offline
         self.retries = retries
         self.retry_delay = retry_delay
         self.request_interval = request_interval
+
+    @property
+    def base_url(self) -> str:
+        """首个镜像地址。保留该属性以兼容只关心单一数据源的调用方。"""
+        return self.base_urls[0]
 
     def cache_path(self, char: str) -> Path:
         return self.cache_dir / f"U+{ord(char):04X}.json"
@@ -207,32 +234,34 @@ class HanziWriterSource:
         return failures
 
     def _download(self, char: str) -> dict[str, Any]:
-        """下载单个字形，带指数退避重试。
+        """下载单个字形，依次尝试各镜像，每个镜像带指数退避重试。
 
         必须重试：CDN 偶发断连（``Remote end closed connection``）是常态，
         批量预取 150 个字时几乎必然遇到，不能因此丢掉整个字符。
-        但 404 属于永久性失败，重试没有意义，直接抛出。
+        但 404 属于永久性失败，重试没有意义，直接换下一个镜像。
         """
-        url = f"{self.base_url}{urllib.parse.quote(char)}.json"
+        encoded = urllib.parse.quote(char)
         last_error: Exception | None = None
 
-        for attempt in range(1, self.retries + 1):
-            try:
-                with urllib.request.urlopen(url, timeout=self.timeout) as response:
-                    return json.load(response)
-            except urllib.error.HTTPError as exc:
-                if exc.code == 404:
-                    raise GlyphNotFoundError(f"字形库中没有 {char!r}") from exc
-                last_error = exc
-            except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-                # OSError 覆盖 RemoteDisconnected / ConnectionResetError / socket.timeout
-                last_error = exc
+        for base in self.base_urls:
+            url = f"{base}{encoded}.json"
+            for attempt in range(1, self.retries + 1):
+                try:
+                    with urllib.request.urlopen(url, timeout=self.timeout) as response:
+                        return json.load(response)
+                except urllib.error.HTTPError as exc:
+                    last_error = exc
+                    if exc.code == 404:
+                        break  # 这个镜像没有，换下一个
+                except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+                    # OSError 覆盖 RemoteDisconnected / ConnectionResetError / socket.timeout
+                    last_error = exc
 
-            if attempt < self.retries:
-                time.sleep(self.retry_delay * (2 ** (attempt - 1)))
+                if attempt < self.retries:
+                    time.sleep(self.retry_delay * (2 ** (attempt - 1)))
 
         raise GlyphNotFoundError(
-            f"下载 {char!r} 连续失败 {self.retries} 次：{last_error}"
+            f"下载 {char!r} 失败（已尝试 {len(self.base_urls)} 个镜像）：{last_error}"
         ) from last_error
 
 

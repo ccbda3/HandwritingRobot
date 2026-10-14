@@ -147,6 +147,27 @@ class TestHanziWriterSource:
         source = HanziWriterSource(cache_dir=tmp_path, base_url="https://example.com/data")
         assert source.base_url == "https://example.com/data/"
 
+    def test_multiple_mirrors_are_kept_in_order(self, tmp_path: Path) -> None:
+        source = HanziWriterSource(
+            cache_dir=tmp_path, base_urls=["https://a.example", "https://b.example/"]
+        )
+        assert source.base_urls == ("https://a.example/", "https://b.example/")
+        assert source.base_url == "https://a.example/"
+
+    def test_default_has_a_fallback_mirror(self, tmp_path: Path) -> None:
+        """单源不可靠：实测 jsdelivr 会偶发断连，必须有备用镜像。"""
+        source = HanziWriterSource(cache_dir=tmp_path)
+        assert len(source.base_urls) >= 2
+        assert len(set(source.base_urls)) == len(source.base_urls)
+
+    def test_empty_mirror_list_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="至少需要一个字形数据源地址"):
+            HanziWriterSource(cache_dir=tmp_path, base_urls=[])
+
+    def test_invalid_retries_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="retries"):
+            HanziWriterSource(cache_dir=tmp_path, retries=0)
+
 
 class TestLoadGlyphs:
     def test_partial_failure_does_not_abort(self, tmp_path: Path) -> None:

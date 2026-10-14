@@ -1,0 +1,49 @@
+# pre-commit 钩子：提交前自动检查与格式化
+# 安装：pip install pre-commit && pre-commit install
+# 手动全量检查：pre-commit run --all-files
+
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^LICENSE$
+      - id: end-of-file-fixer
+        exclude: ^LICENSE$
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+
+      # 禁止直接提交到 main。单人开发阶段请保持注释状态，
+      # 否则每次提交 main 都要 --no-verify；等加入协作者后再启用。
+      # - id: no-commit-to-branch
+      #   args: ["--branch=main"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.5
+    hooks:
+      - id: clang-format
+        files: \.(c|cc|cpp|h|hpp)$
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: ["--ignore-words-list=ba,fo,te,nd", "--skip=*.json,*.csv,LICENSE"]

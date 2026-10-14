@@ -1,0 +1,84 @@
+name: 缺陷报告
+description: 报告一个可复现的缺陷
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量提供可复现的最小信息——「有时会出错」这类描述很难定位。
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: 涉及模块
+      options:
+        - core（C++ 核心库：轨迹 / 优化 / G 代码）
+        - app（Qt 桌面 UI）
+        - capture（笔迹采集器网页）
+        - py（Python 数据集 / 训练）
+        - docs（文档）
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 实际行为是什么？期望行为是什么？
+      placeholder: |
+        实际：导出的 G 代码缺少抬笔指令，笔画之间被连成了一条线。
+        期望：每一笔结束应输出 G0 Z3 抬笔。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 capture/index.html，写 3 个字
+        2. 导出 JSON
+        3. 运行 python -m handwriting.gcode data.json
+        4. 观察到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: 输出 `git rev-parse --short HEAD` 的结果
+      placeholder: a1b2c3d
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: 操作系统、编译器或 Python 版本、Qt 版本、写字机型号与固件
+      placeholder: |
+        Windows 11 24H2
+        g++ 15.2.0 (MinGW) / CMake 4.2.3
+        Qt 6.8
+        GRBL 1.1f，Arduino Uno + CNC Shield
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 输出
+      description: 相关报错、编译输出或 G 代码片段
+      render: shell
+    validations:
+      required: false

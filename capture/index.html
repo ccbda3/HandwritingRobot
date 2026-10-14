@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>笔迹采集器 · Handwriting Capture</title>
+<style>
+  :root{
+    --bg:#16161a; --panel:#1e1e24; --panel2:#25252d; --line:#34343e;
+    --text:#ececf1; --muted:#9a9aa8; --dim:#6e6e7c;
+    --accent:#4c9aff; --ok:#3ddc97; --warn:#ffb020; --bad:#ff6b6b;
+    --paper:#ffffff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    overscroll-behavior:none;-webkit-user-select:none;user-select:none;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  header{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:9px 14px;border-bottom:1px solid var(--line);background:var(--panel);
+  }
+  .brand{font-size:14px;font-weight:500;}
+  .badge{
+    font-size:11px;line-height:1;padding:5px 8px;border-radius:999px;
+    background:var(--panel2);color:var(--muted);border:1px solid var(--line);white-space:nowrap;
+  }
+  .badge.ok{color:var(--ok);border-color:#1f4d3a;}
+  .badge.warn{color:var(--warn);border-color:#5a4416;}
+  .badge.bad{color:var(--bad);border-color:#5a2222;}
+  .spacer{flex:1;}
+
+  .infobar{
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:7px 14px;border-bottom:1px solid var(--line);background:var(--panel2);
+  }
+  .target{display:flex;align-items:center;gap:10px;}
+  .target .lbl{font-size:12px;color:var(--dim);}
+  .target .ch{
+    font-size:38px;line-height:1.05;font-weight:400;color:#fff;
+    font-family:"Kaiti SC","KaiTi","STKaiti","Songti SC","SimSun",serif;
+  }
+  .stat{font-size:12px;color:var(--muted);}
+  .stat b{color:var(--text);font-weight:500;}
+  .stat.out b{color:var(--bad);}
+
+  main{flex:1;display:flex;min-height:0;min-width:0;}
+  .stage{
+    flex:1;position:relative;display:flex;align-items:center;justify-content:center;
+    min-height:0;min-width:0;padding:10px;
+  }
+  canvas#pad{touch-action:none;border-radius:10px;background:var(--paper);display:block;}
+
+  aside{
+    width:210px;flex-shrink:0;border-left:1px solid var(--line);background:var(--panel);
+    padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;
+  }
+  aside h3{margin:0;font-size:12px;font-weight:500;color:var(--muted);}
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;}
+  .grid i{
+    display:block;aspect-ratio:1;border-radius:2px;background:var(--panel2);
+    border:1px solid transparent;font-style:normal;
+  }
+  .grid i.done{background:#1f4d3a;}
+  .grid i.cur{background:var(--accent);}
+  .grid i.skip{background:#4a3a16;}
+
+  footer{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:9px 14px;border-top:1px solid var(--line);background:var(--panel);
+  }
+  button{
+    font:inherit;font-size:13px;padding:9px 14px;border-radius:8px;cursor:pointer;
+    background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    transition:border-color .12s,background .12s;
+  }
+  button:hover{border-color:#4a4a58;}
+  button:active{background:#2e2e38;}
+  button.primary{background:#1d4e8f;border-color:#2b6cc4;color:#fff;}
+  button.primary:hover{background:#22589f;}
+  button.ghost{background:transparent;}
+  button:disabled{opacity:.4;cursor:default;}
+  .grow{flex:1;}
+
+  .hint{
+    position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+    font-size:12px;color:var(--muted);background:rgba(30,30,36,.92);
+    padding:6px 12px;border-radius:999px;border:1px solid var(--line);
+    pointer-events:none;white-space:nowrap;
+  }
+  .toast{
+    position:fixed;left:50%;top:16px;transform:translateX(-50%);
+    background:#1d4e8f;color:#fff;font-size:13px;padding:9px 16px;border-radius:8px;
+    opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;
+  }
+  .toast.show{opacity:1;}
+  @media (max-width:760px){
+    aside{display:none;}
+    .target .ch{font-size:32px;}
+    button{padding:9px 11px;font-size:12px;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">笔迹采集器</span>
+  <span class="badge" id="bProgress">0 / 150</span>
+  <span class="badge" id="bPen">输入设备：等待</span>
+  <span class="badge" id="bPressure">压感：检测中</span>
+  <span class="badge" id="bRate">采样率：—</span>
+  <span class="spacer"></span>
+  <span class="badge" id="bSaved">未备份</span>
+</header>
+
+<div class="infobar">
+  <div class="target">
+    <span class="lbl">请写这个字</span>
+    <span class="ch" id="curChar">永</span>
+  </div>
+  <span class="stat">笔画 <b id="sStroke">0</b></span>
+  <span class="stat">采样点 <b id="sPoint">0</b></span>
+  <span class="stat" id="sOutWrap">出格 <b id="sOut">0</b></span>
+  <span class="stat">本字耗时 <b id="sTime">0.0s</b></span>
+</div>
+
+<main>
+  <div class="stage">
+    <canvas id="pad"></canvas>
+    <div class="hint" id="hint">在白色方格里用笔（或手指）写，写完点「下一字」</div>
+  </div>
+  <aside>
+    <h3>采集进度</h3>
+    <div class="grid" id="progressGrid"></div>
+    <h3>数据统计</h3>
+    <div class="stat">已完成 <b id="sDone">0</b> 字</div>
+    <div class="stat">总采样点 <b id="sTotalPoint">0</b></div>
+    <div class="stat">平均每字点 <b id="sAvgPoint">0</b></div>
+    <div class="stat">平均采样率 <b id="sAvgRate">—</b></div>
+    <h3>导出</h3>
+    <div class="stat" style="line-height:1.7;color:var(--dim)">
+      数据只存在本页内存里，<b style="color:var(--warn)">刷新会丢</b>。
+      建议每写 20～30 字导出一份 JSON 备份。
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <button id="btnUndo" class="ghost">撤销一笔</button>
+  <button id="btnClear" class="ghost">清空本字</button>
+  <button id="btnSkip" class="ghost">跳过</button>
+  <span class="grow"></span>
+  <button id="btnExport">导出 JSON</button>
+  <button id="btnCsv" class="ghost">CSV</button>
+  <button id="btnNext" class="primary">下一字 ▶</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+var CHARS = ("永一二三十木人大上小" +
+"下口日月田目山川水火" +
+"土石金玉王生手心刀弓" +
+"女子好明林森品晶中国" +
+"民共和家天地春夏秋冬" +
+"东南西北风雨雪云花草" +
+"树叶鸟鱼虫马牛羊犬猫" +
+"龙虎我你他她们是了的" +
+"在有就不都很也与及或" +
+"但而因为所以这那些什" +
+"么谁哪里时候年分秒早" +
+"晚前后左右高低长短多" +
+"少快慢新旧坏美丽亮暗" +
+"冷热温暖开关进出往来" +
+"去走跑飞跳看听说读写").split("");
+
+var pad = document.getElementById("pad");
+var ctx = pad.getContext("2d");
+
+var state = {
+  index: 0,
+  samples: [],          // {char, strokes:[ {points:[{x,y,p,t}], outCount} ], ms}
+  strokes: [],          // 当前字的笔画
+  current: null,        // 正在画的笔画
+  drawing: false,
+  cell: {x:0, y:0, size:300},
+  dpr: 1,
+  device: { type:"—", pressure:null, rate:0, rateSamples:[] },
+  saved: false
+};
+
+function toast(msg){
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.remove("show"); }, 1600);
+}
+
+/* ---------- 布局 ---------- */
+function layout(){
+  var stage = pad.parentElement;
+  var availW = stage.clientWidth - 20;
+  var availH = stage.clientHeight - 20;
+  var size = Math.max(160, Math.min(availW, availH));
+
+  state.dpr = window.devicePixelRatio || 1;
+  pad.style.width = size + "px";
+  pad.style.height = size + "px";
+  pad.width = Math.round(size * state.dpr);
+  pad.height = Math.round(size * state.dpr);
+  ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+
+  var m = Math.round(size * 0.06);
+  state.cell = { x:m, y:m, size:size - m*2 };
+  render();
+}
+
+/* ---------- 绘制 ---------- */
+function drawGrid(){
+  var c = state.cell, s = c.size;
+  ctx.save();
+  ctx.strokeStyle = "#dcdcdc";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(c.x + .5, c.y + .5, s - 1, s - 1);
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = "#e6e6e6";
+  ctx.beginPath();
+  ctx.moveTo(c.x + s/2, c.y); ctx.lineTo(c.x + s/2, c.y + s);
+  ctx.moveTo(c.x, c.y + s/2); ctx.lineTo(c.x + s, c.y + s/2);
+  ctx.moveTo(c.x, c.y); ctx.lineTo(c.x + s, c.y + s);
+  ctx.moveTo(c.x + s, c.y); ctx.lineTo(c.x, c.y + s);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function pressureKnown(){
+  return state.device.pressure === true;
+}
+
+function strokeWidth(p){
+  if(!pressureKnown()) return 3.2;
+  var q = Math.max(0, Math.min(1, p));
+  return 1.5 + 4.5 * Math.pow(q, 0.75);
+}
+
+function drawStroke(st){
+  var pts = st.points, c = state.cell;
+  if(!pts.length) return;
+  ctx.strokeStyle = "#141414";
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if(pts.length === 1){
+    ctx.beginPath();
+    ctx.arc(c.x + pts[0].x*c.size, c.y + pts[0].y*c.size, strokeWidth(pts[0].p)/2, 0, Math.PI*2);
+    ctx.fillStyle = "#141414";
+    ctx.fill();
+    return;
+  }
+  for(var i=1;i<pts.length;i++){
+    var a = pts[i-1], b = pts[i];
+    ctx.beginPath();
+    ctx.lineWidth = strokeWidth((a.p + b.p) / 2);
+    ctx.moveTo(c.x + a.x*c.size, c.y + a.y*c.size);
+    ctx.lineTo(c.x + b.x*c.size, c.y + b.y*c.size);
+    ctx.stroke();
+  }
+}
+
+function render(){
+  var w = pad.width / state.dpr, h = pad.height / state.dpr;
+  ctx.clearRect(0, 0, w, h);
+  drawGrid();
+  var c = state.cell;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(c.x, c.y, c.size, c.size);
+  ctx.clip();
+  for(var i=0;i<state.strokes.length;i++) drawStroke(state.strokes[i]);
+  if(state.current) drawStroke(state.current);
+  ctx.restore();
+  updateStats();
+}
+
+/* ---------- 指针事件 ---------- */
+function toLocal(e){
+  var r = pad.getBoundingClientRect();
+  var c = state.cell;
+  var nx = (e.clientX - r.left - c.x) / c.size;
+  var ny = (e.clientY - r.top  - c.y) / c.size;
+  var p = (typeof e.pressure === "number") ? e.pressure : 0.5;
+  return { x:nx, y:ny, p:p, t:e.timeStamp };
+}
+
+function noteDevice(e){
+  var t = e.pointerType || "mouse";
+  if(t === "pen") state.device.type = "触控笔 / 数位笔";
+  else if(t === "touch") state.device.type = state.device.type === "触控笔 / 数位笔" ? state.device.type : "手指 / 触摸屏";
+  else state.device.type = state.device.type === "触控笔 / 数位笔" ? state.device.type : "鼠标";
+  document.getElementById("bPen").textContent = "输入设备：" + state.device.type;
+}
+
+function addPoint(e){
+  if(!state.current) return;
+  var pt = toLocal(e);
+  var pts = state.current.points;
+  var last = pts[pts.length-1];
+  if(last && Math.abs(last.x - pt.x) < 1e-4 && Math.abs(last.y - pt.y) < 1e-4) return;
+
+  if(typeof e.pressure === "number" && e.pressure > 0){
+    if(state.device.pressure === null){
+      state.device.pressure = (e.pointerType === "pen") || (e.pressure !== 0.5);
+    }
+  }
+  if(pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1) state.current.outCount++;
+  pts.push(pt);
+}
+
+function onDown(e){
+  if(e.pointerType === "mouse" && e.button !== 0) return;
+  e.preventDefault();
+  try{ pad.setPointerCapture(e.pointerId); }catch(err){}
+  noteDevice(e);
+  state.drawing = true;
+  state.current = { points: [], outCount: 0, t0: e.timeStamp };
+  addPoint(e);
+  render();
+}
+
+function onMove(e){
+  if(!state.drawing) return;
+  e.preventDefault();
+  var evs = null;
+  if(typeof e.getCoalescedEvents === "function"){
+    try{ evs = e.getCoalescedEvents(); }catch(err){ evs = null; }
+  }
+  var list = (evs && evs.length) ? evs : [e];
+  for(var i=0;i<list.length;i++) addPoint(list[i]);
+
+  var pts = state.current.points;
+  if(pts.length > 2){
+    var dt = pts[pts.length-1].t - pts[pts.length-2].t;
+    if(dt > 0) state.device.rateSamples.push(1000 / dt);
+  }
+  render();
+}
+
+function onUp(e){
+  if(!state.drawing) return;
+  e.preventDefault();
+  state.drawing = false;
+  var st = state.current;
+  state.current = null;
+  if(st && st.points.length){
+    var t0 = st.points[0].t;
+    for(var i=0;i<st.points.length;i++) st.points[i].t = Math.round(st.points[i].t - t0);
+    state.strokes.push({ points: st.points, outCount: st.outCount });
+    if(state.device.pressure === null) state.device.pressure = false;
+  }
+  render();
+}
+
+pad.addEventListener("pointerdown", onDown);
+pad.addEventListener("pointermove", onMove);
+pad.addEventListener("pointerup", onUp);
+pad.addEventListener("pointercancel", onUp);
+pad.addEventListener("pointerleave", function(e){ if(state.drawing) onUp(e); });
+pad.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+
+/* ---------- 统计 ---------- */
+function updateStats(){
+  var pts = 0, out = 0;
+  for(var i=0;i<state.strokes.length;i++){
+    pts += state.strokes[i].points.length;
+    out += state.strokes[i].outCount;
+  }
+  if(state.current){ pts += state.current.points.length; out += state.current.outCount; }
+
+  document.getElementById("sStroke").textContent = state.strokes.length;
+  document.getElementById("sPoint").textContent = pts;
+  document.getElementById("sOut").textContent = out;
+  document.getElementById("sOutWrap").className = out > 0 ? "stat out" : "stat";
+
+  var rs = state.device.rateSamples;
+  if(rs.length){
+    var recent = rs.slice(-300);
+    var sum = 0;
+    for(var j=0;j<recent.length;j++) sum += recent[j];
+    var hz = sum / recent.length;
+    state.device.rate = hz;
+    document.getElementById("bRate").textContent = "采样率：" + Math.round(hz) + " Hz";
+  }
+
+  var bp = document.getElementById("bPressure");
+  if(state.device.pressure === true){ bp.textContent = "压感：支持"; bp.className = "badge ok"; }
+  else if(state.device.pressure === false){ bp.textContent = "压感：不支持（用恒定笔宽）"; bp.className = "badge warn"; }
+  else { bp.textContent = "压感：检测中"; bp.className = "badge"; }
+}
+
+function refreshProgress(){
+  var done = state.samples.length;
+  document.getElementById("bProgress").textContent = done + " / " + CHARS.length;
+  document.getElementById("sDone").textContent = done;
+  var total = 0, strokes = 0;
+  for(var i=0;i<state.samples.length;i++){
+    var s = state.samples[i];
+    strokes += s.strokes.length;
+    for(var j=0;j<s.strokes.length;j++) total += s.strokes[j].points.length;
+  }
+  document.getElementById("sTotalPoint").textContent = total;
+  document.getElementById("sAvgPoint").textContent = done ? Math.round(total/done) : 0;
+  var rates = state.samples.map(function(s){ return s.rate; }).filter(function(v){ return v > 0; });
+  var avg = rates.length ? Math.round(rates.reduce(function(a,b){ return a+b; },0)/rates.length) : 0;
+  document.getElementById("sAvgRate").textContent = avg ? avg + " Hz" : "—";
+
+  var g = document.getElementById("progressGrid");
+  g.innerHTML = "";
+  for(var k=0;k<CHARS.length;k++){
+    var cell = document.createElement("i");
+    if(k < state.index) cell.className = "done";
+    if(k === state.index) cell.className = "cur";
+    g.appendChild(cell);
+  }
+  document.getElementById("curChar").textContent = CHARS[state.index] || "—";
+}
+
+/* ---------- 操作 ---------- */
+function clearCurrent(){
+  state.strokes = [];
+  state.current = null;
+  render();
+}
+
+function undo(){
+  if(state.strokes.length){ state.strokes.pop(); render(); }
+}
+
+function commit(skipped){
+  var total = 0;
+  for(var i=0;i<state.strokes.length;i++) total += state.strokes[i].points.length;
+  if(!skipped && total > 0){
+    state.samples.push({
+      char: CHARS[state.index],
+      strokes: state.strokes.map(function(s){ return s.points; }),
+      rate: Math.round(state.device.rate) || 0,
+      pressure: state.device.pressure === true
+    });
+    state.saved = false;
+    document.getElementById("bSaved").textContent = "未备份";
+    document.getElementById("bSaved").className = "badge warn";
+  }
+  if(state.index < CHARS.length - 1){
+    state.index++;
+  } else {
+    toast("150 个字全部写完，记得导出数据！");
+  }
+  clearCurrent();
+  refreshProgress();
+  if(state.index % 25 === 0 && state.index > 0) toast("已写 " + state.index + " 字，建议导出一份备份");
+}
+
+function buildPayload(){
+  return {
+    format: "handwriting-capture/1.0",
+    meta: {
+      device: state.device.type,
+      pressureSupported: state.device.pressure === true,
+      samplingHz: Math.round(state.device.rate) || null,
+      charCount: CHARS.length,
+      cellPx: Math.round(state.cell.size),
+      devicePixelRatio: state.dpr,
+      coordSystem: "归一化到方格，原点在方格左上角，x 向右，y 向下，取值 0~1",
+      createdAt: new Date().toISOString()
+    },
+    samples: state.samples.map(function(s, i){
+      return {
+        index: i,
+        char: s.char,
+        strokeCount: s.strokes.length,
+        rate: s.rate,
+        pressure: s.pressure,
+        strokes: s.strokes.map(function(pts){
+          return pts.map(function(p){ return [+p.x.toFixed(5), +p.y.toFixed(5), +p.p.toFixed(4), p.t]; });
+        })
+      };
+    })
+  };
+}
+
+function download(name, text, mime){
+  var blob = new Blob([text], { type: mime + ";charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+}
+
+function stamp(){
+  var d = new Date(), z = function(n){ return (n<10?"0":"") + n; };
+  return d.getFullYear() + z(d.getMonth()+1) + z(d.getDate()) + "-" + z(d.getHours()) + z(d.getMinutes());
+}
+
+function exportJSON(){
+  if(!state.samples.length){ toast("还没有采集到数据"); return; }
+  download("handwriting-" + stamp() + ".json", JSON.stringify(buildPayload(), null, 1), "application/json");
+  state.saved = true;
+  document.getElementById("bSaved").textContent = "已备份";
+  document.getElementById("bSaved").className = "badge ok";
+  toast("已导出 " + state.samples.length + " 个字");
+}
+
+function exportCSV(){
+  if(!state.samples.length){ toast("还没有采集到数据"); return; }
+  var rows = ["sample_index,char,stroke_id,point_id,x,y,pressure,t_ms"];
+  state.samples.forEach(function(s, si){
+    s.strokes.forEach(function(pts, sti){
+      pts.forEach(function(p, pi){
+        rows.push([si, s.char, sti, pi, p.x.toFixed(5), p.y.toFixed(5), p.p.toFixed(4), p.t].join(","));
+      });
+    });
+  });
+  download("handwriting-" + stamp() + ".csv", rows.join("\n"), "text/csv");
+  toast("已导出 CSV");
+}
+
+/* ---------- 绑定 ---------- */
+document.getElementById("btnUndo").onclick = undo;
+document.getElementById("btnClear").onclick = clearCurrent;
+document.getElementById("btnSkip").onclick = function(){ commit(true); };
+document.getElementById("btnNext").onclick = function(){ commit(false); };
+document.getElementById("btnExport").onclick = exportJSON;
+document.getElementById("btnCsv").onclick = exportCSV;
+
+document.addEventListener("keydown", function(e){
+  if((e.ctrlKey || e.metaKey) && e.key === "z"){ e.preventDefault(); undo(); }
+  else if(e.key === " "){ e.preventDefault(); commit(false); }
+  else if(e.key === "Escape"){ clearCurrent(); }
+});
+
+window.addEventListener("resize", layout);
+window.addEventListener("orientationchange", function(){ setTimeout(layout, 200); });
+
+refreshProgress();
+layout();
+setTimeout(function(){ document.getElementById("hint").style.display = "none"; }, 6000);
+
+})();
+</script>
+</body>
+</html>

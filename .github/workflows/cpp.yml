@@ -1,0 +1,72 @@
+name: C++
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "app/**"
+      - "benchmarks/cpp/**"
+      - "CMakeLists.txt"
+      - ".clang-format"
+      - ".github/workflows/cpp.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: 构建 + CTest
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ qt6-base-dev clang-format
+
+      - name: clang-format 检查
+        run: |
+          find core app -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \
+            | xargs clang-format --dry-run --Werror
+
+      - name: 配置
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: 构建（含 Qt 前端）
+        run: cmake --build build
+
+      - name: 单元测试
+        run: ctest --test-dir build --output-on-failure
+
+      - name: 运行基准
+        run: ./build/benchmarks/cpp/bench_pipeline
+
+  core-only:
+    name: 核心库独立构建（无 Qt）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+
+      - name: 配置（不依赖 Qt）
+        run: cmake -S . -B build-core -G Ninja -DCMAKE_BUILD_TYPE=Release -DHR_BUILD_APP=OFF
+
+      - name: 构建
+        run: cmake --build build-core
+
+      - name: 单元测试
+        run: ctest --test-dir build-core --output-on-failure

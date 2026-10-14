@@ -1,0 +1,101 @@
+# 笔迹数据格式规范
+
+当前版本：`handwriting-capture/1.0`
+
+## 顶层结构
+
+```json
+{
+  "format": "handwriting-capture/1.0",
+  "meta": { "...": "..." },
+  "samples": [ "...": "..." ]
+}
+```
+
+## meta
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `device` | string | 采集设备描述，如 `触控笔 / 数位笔` |
+| `pressureSupported` | bool | 是否采到真实压感。**为 false 时无法还原笔画粗细变化** |
+| `samplingHz` | int \| null | 实测采样率。**低于 100 Hz 时快速连笔会丢细节** |
+| `charCount` | int | 字表长度 |
+| `cellPx` | int | 采集方格边长（像素），用于还原绝对尺度 |
+| `devicePixelRatio` | number | 设备像素比 |
+| `coordSystem` | string | 坐标系说明 |
+| `createdAt` | string | ISO 8601 时间戳 |
+
+## samples[]
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `index` | int | 样本序号 |
+| `char` | string | 字符标签 |
+| `strokeCount` | int | 笔画数 |
+| `rate` | int | 该字的实测采样率 |
+| `pressure` | bool | 该字是否带压感 |
+| `strokes` | array | 笔画数组，**外层顺序即笔顺** |
+
+## strokes 内的采样点
+
+每个采样点是四元组 `[x, y, pressure, t]`：
+
+| 位置 | 类型 | 范围 | 说明 |
+|---|---|---|---|
+| 0 | float | 0~1（可略微越界） | x 坐标，向右为正 |
+| 1 | float | 0~1（可略微越界） | y 坐标，**向下为正** |
+| 2 | float | 0~1 | 压感。设备不支持时恒为 0.5 |
+| 3 | int | ≥ 0 | 相对该笔起笔的毫秒数，同一笔内单调不减 |
+
+坐标原点在方格左上角，归一化到方格边长。
+`x`/`y` 允许略微超出 0~1（手写会出格），采集器会同时记录出格点数用于质量筛选。
+
+## 完整示例
+
+```json
+{
+  "format": "handwriting-capture/1.0",
+  "meta": {
+    "device": "触控笔 / 数位笔",
+    "pressureSupported": true,
+    "samplingHz": 150,
+    "charCount": 150,
+    "cellPx": 512,
+    "coordSystem": "归一化到方格，原点在方格左上角，x 向右，y 向下，取值 0~1",
+    "createdAt": "2026-10-14T15:59:00.000Z"
+  },
+  "samples": [
+    {
+      "index": 0,
+      "char": "永",
+      "strokeCount": 5,
+      "rate": 150,
+      "pressure": true,
+      "strokes": [
+        [[0.512, 0.104, 0.31, 0], [0.508, 0.118, 0.44, 7]],
+        [[0.300, 0.300, 0.52, 0]]
+      ]
+    }
+  ]
+}
+```
+
+## 为什么笔顺不需要"恢复"
+
+传统做法是把汉字当图像处理，因此必须从像素反推笔顺——这是一个没有唯一解的逆问题。
+本格式把笔顺编码为 `strokes` 的**外层数组顺序**：第 0 笔、第 1 笔、第 2 笔……
+信息在采集时就完整记录了，不需要任何推断。
+
+## 采集质量门槛
+
+`CaptureData.validate()` 会检查以下项目：
+
+- `pressureSupported` 必须为 true，否则无法还原笔画粗细
+- `samplingHz` 建议 ≥ 100 Hz
+- 每个样本必须有字符标签且至少一笔
+
+## 版本演进规则
+
+- 字段只增不改不删；废弃字段标记 `deprecated` 并保留至少一个大版本
+- `format` 字符串随不兼容变更递增主版本号
+- 读取端遇到未知 `format` 必须报错，不得静默降级

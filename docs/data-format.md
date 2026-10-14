@@ -23,6 +23,7 @@
 | `cellPx` | int | 采集方格边长（像素），用于还原绝对尺度 |
 | `devicePixelRatio` | number | 设备像素比 |
 | `coordSystem` | string | 坐标系说明 |
+| `orderStrategy` | string | 字表排序策略说明 |
 | `createdAt` | string | ISO 8601 时间戳 |
 
 ## samples[]
@@ -35,6 +36,18 @@
 | `rate` | int | 该字的实测采样率 |
 | `pressure` | bool | 该字是否带压感 |
 | `strokes` | array | 笔画数组，**外层顺序即笔顺** |
+| `strokeStartT` | array[int] | 可选。每笔相对**该字起笔时刻**的毫秒数 |
+
+### 为什么需要 strokeStartT
+
+`strokes` 里每个点的 `t` 是相对**该笔**起笔的，因此无法还原笔与笔之间的间隔。
+而「抬笔时间 / 总书写时间」是判断书写连贯性的关键风格特征
+（见 `handwriting.style.StyleFeatures.pause_ratio`）。
+
+`strokeStartT` 补上这个信息：第 i 笔的绝对起始时刻 = `strokeStartT[i]`。
+缺少该字段时 `pause_ratio` 为 `None`，其余特征不受影响。
+
+这是**向后兼容的新增字段**，旧版采集器导出的数据仍然合法。
 
 ## strokes 内的采样点
 
@@ -62,6 +75,7 @@
     "charCount": 150,
     "cellPx": 512,
     "coordSystem": "归一化到方格，原点在方格左上角，x 向右，y 向下，取值 0~1",
+    "orderStrategy": "structure×complexity 覆盖度轮转贪心（scripts/build_curriculum.py）",
     "createdAt": "2026-10-14T15:59:00.000Z"
   },
   "samples": [
@@ -74,7 +88,8 @@
       "strokes": [
         [[0.512, 0.104, 0.31, 0], [0.508, 0.118, 0.44, 7]],
         [[0.300, 0.300, 0.52, 0]]
-      ]
+      ],
+      "strokeStartT": [0, 420]
     }
   ]
 }
@@ -86,6 +101,20 @@
 本格式把笔顺编码为 `strokes` 的**外层数组顺序**：第 0 笔、第 1 笔、第 2 笔……
 信息在采集时就完整记录了，不需要任何推断。
 
+## 采集顺序
+
+采集器**不按字表原序**要求用户书写，而是按 `scripts/build_curriculum.py` 算出的
+「结构 × 复杂度」覆盖度顺序：
+
+- 前 8 个字是人工策展的冷启动集（`永西叶好冬花国风`），
+  覆盖 8 个不同的结构-复杂度格子。其中「永」居首是因为永字八法包含
+  横竖撇捺点折钩提全部八种基本笔画
+- 之后按轮转贪心补齐：每次从当前覆盖次数最少的格子取一个字
+- 写完 40 字后，每个格子都至少有 2 个样本
+
+顺序与元数据以字符串常量内嵌在 `capture/index.html` 中。
+`tests/test_curriculum.py::TestCollectorConsistency` 会检查两者是否同步。
+
 ## 采集质量门槛
 
 `CaptureData.validate()` 会检查以下项目：
@@ -93,6 +122,8 @@
 - `pressureSupported` 必须为 true，否则无法还原笔画粗细
 - `samplingHz` 建议 ≥ 100 Hz
 - 每个样本必须有字符标签且至少一笔
+
+采集器在书写过程中也会实时显示这些检查结果（质量检查面板）。
 
 ## 版本演进规则
 

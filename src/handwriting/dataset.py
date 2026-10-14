@@ -49,6 +49,8 @@ class CaptureSample:
     strokes: list[Stroke]
     rate: int = 0
     pressure: bool = False
+    stroke_start_t: list[int] | None = None
+    """每笔相对该字起笔时刻的毫秒数。缺失时无法计算 ``pause_ratio``。"""
 
     @property
     def stroke_count(self) -> int:
@@ -90,6 +92,7 @@ class CaptureData:
 
         samples: list[CaptureSample] = []
         for i, item in enumerate(raw_samples):
+            raw_start = item.get("strokeStartT")
             samples.append(
                 CaptureSample(
                     index=int(item.get("index", i)),
@@ -97,6 +100,7 @@ class CaptureData:
                     strokes=strokes_from_arrays(item.get("strokes", [])),
                     rate=int(item.get("rate", 0) or 0),
                     pressure=bool(item.get("pressure", False)),
+                    stroke_start_t=[int(v) for v in raw_start] if raw_start else None,
                 )
             )
         return cls(

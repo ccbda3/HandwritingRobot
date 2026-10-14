@@ -10,6 +10,7 @@
     --text:#ececf1; --muted:#9a9aa8; --dim:#6e6e7c;
     --accent:#4c9aff; --ok:#3ddc97; --warn:#ffb020; --bad:#ff6b6b;
     --paper:#ffffff;
+    --s1:#4c9aff; --s2:#2bbf9c; --s3:#9d8cf5; --s4:#e0a53c; --s5:#e07a5f;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;margin:0;}
@@ -34,18 +35,31 @@
   .spacer{flex:1;}
 
   .infobar{
-    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
-    padding:7px 14px;border-bottom:1px solid var(--line);background:var(--panel2);
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel2);
   }
-  .target{display:flex;align-items:center;gap:10px;}
+  .target{display:flex;align-items:center;gap:12px;}
   .target .lbl{font-size:12px;color:var(--dim);}
   .target .ch{
-    font-size:38px;line-height:1.05;font-weight:400;color:#fff;
+    font-size:40px;line-height:1;font-weight:400;color:#fff;
     font-family:"Kaiti SC","KaiTi","STKaiti","Songti SC","SimSun",serif;
+  }
+  .target .meta{display:flex;flex-direction:column;gap:4px;}
+  .pill{
+    font-size:11px;line-height:1;padding:4px 7px;border-radius:5px;
+    background:var(--panel);border:1px solid var(--line);color:var(--muted);white-space:nowrap;
   }
   .stat{font-size:12px;color:var(--muted);}
   .stat b{color:var(--text);font-weight:500;}
   .stat.out b{color:var(--bad);}
+
+  .milestones{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dim);}
+  .ms{display:flex;align-items:center;gap:4px;white-space:nowrap;}
+  .ms .dot{width:7px;height:7px;border-radius:50%;background:var(--line);}
+  .ms.reached{color:var(--ok);}
+  .ms.reached .dot{background:var(--ok);}
+  .ms.current{color:var(--text);}
+  .ms.current .dot{background:var(--accent);}
 
   main{flex:1;display:flex;min-height:0;min-width:0;}
   .stage{
@@ -55,18 +69,27 @@
   canvas#pad{touch-action:none;border-radius:10px;background:var(--paper);display:block;}
 
   aside{
-    width:210px;flex-shrink:0;border-left:1px solid var(--line);background:var(--panel);
-    padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;
+    width:214px;flex-shrink:0;border-left:1px solid var(--line);background:var(--panel);
+    padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;
   }
   aside h3{margin:0;font-size:12px;font-weight:500;color:var(--muted);}
   .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;}
-  .grid i{
-    display:block;aspect-ratio:1;border-radius:2px;background:var(--panel2);
-    border:1px solid transparent;font-style:normal;
-  }
-  .grid i.done{background:#1f4d3a;}
-  .grid i.cur{background:var(--accent);}
+  .grid i{display:block;aspect-ratio:1;border-radius:2px;background:var(--panel2);font-style:normal;}
+  .grid i.done.s1{background:var(--s1);} .grid i.done.s2{background:var(--s2);}
+  .grid i.done.s3{background:var(--s3);} .grid i.done.s4{background:var(--s4);}
+  .grid i.done.s5{background:var(--s5);}
+  .grid i.cur{outline:2px solid #fff;outline-offset:-1px;}
   .grid i.skip{background:#4a3a16;}
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--dim);}
+  .legend span{display:flex;align-items:center;gap:4px;}
+  .legend i{width:8px;height:8px;border-radius:2px;display:block;}
+
+  .issues{display:flex;flex-direction:column;gap:6px;}
+  .issue{font-size:11px;line-height:1.5;padding:6px 8px;border-radius:6px;
+         background:var(--panel2);border-left:2px solid var(--warn);color:var(--muted);}
+  .issue.bad{border-left-color:var(--bad);}
+  .issue.ok{border-left-color:var(--ok);}
 
   footer{
     display:flex;align-items:center;gap:8px;flex-wrap:wrap;
@@ -82,14 +105,13 @@
   button.primary{background:#1d4e8f;border-color:#2b6cc4;color:#fff;}
   button.primary:hover{background:#22589f;}
   button.ghost{background:transparent;}
-  button:disabled{opacity:.4;cursor:default;}
   .grow{flex:1;}
 
   .hint{
     position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
     font-size:12px;color:var(--muted);background:rgba(30,30,36,.92);
     padding:6px 12px;border-radius:999px;border:1px solid var(--line);
-    pointer-events:none;white-space:nowrap;
+    pointer-events:none;white-space:nowrap;text-align:center;
   }
   .toast{
     position:fixed;left:50%;top:16px;transform:translateX(-50%);
@@ -97,10 +119,11 @@
     opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;
   }
   .toast.show{opacity:1;}
-  @media (max-width:760px){
+  @media (max-width:820px){
     aside{display:none;}
     .target .ch{font-size:32px;}
     button{padding:9px 11px;font-size:12px;}
+    .milestones{display:none;}
   }
 </style>
 </head>
@@ -119,7 +142,12 @@
   <div class="target">
     <span class="lbl">请写这个字</span>
     <span class="ch" id="curChar">永</span>
+    <span class="meta">
+      <span class="pill" id="curStructure">独体</span>
+      <span class="pill" id="curComplexity">简单</span>
+    </span>
   </div>
+  <div class="milestones" id="milestones"></div>
   <span class="stat">笔画 <b id="sStroke">0</b></span>
   <span class="stat">采样点 <b id="sPoint">0</b></span>
   <span class="stat" id="sOutWrap">出格 <b id="sOut">0</b></span>
@@ -129,20 +157,32 @@
 <main>
   <div class="stage">
     <canvas id="pad"></canvas>
-    <div class="hint" id="hint">在白色方格里用笔（或手指）写，写完点「下一字」</div>
+    <div class="hint" id="hint">在白色方格里用笔写，写完点「下一字」</div>
   </div>
   <aside>
-    <h3>采集进度</h3>
+    <h3>采集进度 · 按结构着色</h3>
     <div class="grid" id="progressGrid"></div>
+    <div class="legend">
+      <span><i style="background:var(--s1)"></i>独体</span>
+      <span><i style="background:var(--s2)"></i>左右</span>
+      <span><i style="background:var(--s3)"></i>上下</span>
+      <span><i style="background:var(--s4)"></i>包围</span>
+      <span><i style="background:var(--s5)"></i>半包围</span>
+    </div>
+
+    <h3>质量检查</h3>
+    <div class="issues" id="issues"></div>
+
     <h3>数据统计</h3>
     <div class="stat">已完成 <b id="sDone">0</b> 字</div>
     <div class="stat">总采样点 <b id="sTotalPoint">0</b></div>
     <div class="stat">平均每字点 <b id="sAvgPoint">0</b></div>
     <div class="stat">平均采样率 <b id="sAvgRate">—</b></div>
+
     <h3>导出</h3>
     <div class="stat" style="line-height:1.7;color:var(--dim)">
       数据只存在本页内存里，<b style="color:var(--warn)">刷新会丢</b>。
-      建议每写 20～30 字导出一份 JSON 备份。
+      每写 20～30 字导出一份 JSON 备份。
     </div>
   </aside>
 </main>
@@ -163,43 +203,50 @@
 (function(){
 "use strict";
 
-var CHARS = ("永一二三十木人大上小" +
-"下口日月田目山川水火" +
-"土石金玉王生手心刀弓" +
-"女子好明林森品晶中国" +
-"民共和家天地春夏秋冬" +
-"东南西北风雨雪云花草" +
-"树叶鸟鱼虫马牛羊犬猫" +
-"龙虎我你他她们是了的" +
-"在有就不都很也与及或" +
-"但而因为所以这那些什" +
-"么谁哪里时候年分秒早" +
-"晚前后左右高低长短多" +
-"少快慢新旧坏美丽亮暗" +
-"冷热温暖开关进出往来" +
-"去走跑飞跳看听说读写").split("");
+/* ===========================================================================
+   ORDER / CELLS 由 scripts/build_curriculum.py 生成，请勿手工修改。
+   顺序按「结构 × 复杂度」覆盖度轮转贪心排列，前 8 个字覆盖 8 个不同格子，
+   满足 ADR-0005 冷启动要求。
+
+   重新生成：
+       python scripts/build_curriculum.py
+   =========================================================================== */
+var ORDER = "永西叶好冬花国风虎森猫一石北分金明雨在因晶就二他左去林品虫有家都三们右写共和羊或夏谁十以地春我这雪候木什秋南而后晚高人旧草树里进短热大鱼你年慢上她是来新小的些暗下很早温口但前暖日所多跑月那美跳田哪丽读目时亮山秒关川低走水快看火坏土冷玉往王听生说手心刀弓女子中民天东云鸟马牛犬龙了不也与及为么长少开出飞";
+var CELLS = "111221223132425152332311512131322212524233231121513122321252332311215131322212523323112122321252332311212232125223331121322212522333113222122311223212231122322311223223112232231122322311223223112232231122321122321122321122321122112211221122112211111111111111111111111111111111111111111111111111111111";
+
+var STRUCTURES = {"1":"独体","2":"左右","3":"上下","4":"包围","5":"半包围"};
+var COMPLEXITIES = {"1":"简单（≤5 画）","2":"中等（6~9 画）","3":"复杂（≥10 画）"};
+var MILESTONES = [
+  {n:8,  label:"可用",  tip:"8 个字已可做 few-shot 风格推断"},
+  {n:40, label:"良好",  tip:"每类结构-复杂度都已有 2 个以上样本"},
+  {n:150,label:"最佳",  tip:"全字表采集完成"}
+];
+var MIN_SAMPLING_HZ = 100;
 
 var pad = document.getElementById("pad");
 var ctx = pad.getContext("2d");
 
 var state = {
   index: 0,
-  samples: [],          // {char, strokes:[ {points:[{x,y,p,t}], outCount} ], ms}
-  strokes: [],          // 当前字的笔画
-  current: null,        // 正在画的笔画
+  samples: [],
+  skipped: [],
+  strokes: [],
+  current: null,
   drawing: false,
+  charStartTs: null,
   cell: {x:0, y:0, size:300},
   dpr: 1,
-  device: { type:"—", pressure:null, rate:0, rateSamples:[] },
-  saved: false
+  device: { type:"—", pressure:null, rate:0, rateSamples:[] }
 };
+
+function cellAt(i){ return { s:CELLS.charAt(i*2), c:CELLS.charAt(i*2+1) }; }
 
 function toast(msg){
   var el = document.getElementById("toast");
   el.textContent = msg;
   el.classList.add("show");
   clearTimeout(el._t);
-  el._t = setTimeout(function(){ el.classList.remove("show"); }, 1600);
+  el._t = setTimeout(function(){ el.classList.remove("show"); }, 1800);
 }
 
 /* ---------- 布局 ---------- */
@@ -240,9 +287,7 @@ function drawGrid(){
   ctx.restore();
 }
 
-function pressureKnown(){
-  return state.device.pressure === true;
-}
+function pressureKnown(){ return state.device.pressure === true; }
 
 function strokeWidth(p){
   if(!pressureKnown()) return 3.2;
@@ -254,12 +299,12 @@ function drawStroke(st){
   var pts = st.points, c = state.cell;
   if(!pts.length) return;
   ctx.strokeStyle = "#141414";
+  ctx.fillStyle = "#141414";
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   if(pts.length === 1){
     ctx.beginPath();
     ctx.arc(c.x + pts[0].x*c.size, c.y + pts[0].y*c.size, strokeWidth(pts[0].p)/2, 0, Math.PI*2);
-    ctx.fillStyle = "#141414";
     ctx.fill();
     return;
   }
@@ -274,8 +319,7 @@ function drawStroke(st){
 }
 
 function render(){
-  var w = pad.width / state.dpr, h = pad.height / state.dpr;
-  ctx.clearRect(0, 0, w, h);
+  ctx.clearRect(0, 0, pad.width / state.dpr, pad.height / state.dpr);
   drawGrid();
   var c = state.cell;
   ctx.save();
@@ -292,10 +336,12 @@ function render(){
 function toLocal(e){
   var r = pad.getBoundingClientRect();
   var c = state.cell;
-  var nx = (e.clientX - r.left - c.x) / c.size;
-  var ny = (e.clientY - r.top  - c.y) / c.size;
-  var p = (typeof e.pressure === "number") ? e.pressure : 0.5;
-  return { x:nx, y:ny, p:p, t:e.timeStamp };
+  return {
+    x:(e.clientX - r.left - c.x) / c.size,
+    y:(e.clientY - r.top  - c.y) / c.size,
+    p:(typeof e.pressure === "number") ? e.pressure : 0.5,
+    t:e.timeStamp
+  };
 }
 
 function noteDevice(e){
@@ -313,10 +359,8 @@ function addPoint(e){
   var last = pts[pts.length-1];
   if(last && Math.abs(last.x - pt.x) < 1e-4 && Math.abs(last.y - pt.y) < 1e-4) return;
 
-  if(typeof e.pressure === "number" && e.pressure > 0){
-    if(state.device.pressure === null){
-      state.device.pressure = (e.pointerType === "pen") || (e.pressure !== 0.5);
-    }
+  if(typeof e.pressure === "number" && e.pressure > 0 && state.device.pressure === null){
+    state.device.pressure = (e.pointerType === "pen") || (e.pressure !== 0.5);
   }
   if(pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1) state.current.outCount++;
   pts.push(pt);
@@ -327,8 +371,9 @@ function onDown(e){
   e.preventDefault();
   try{ pad.setPointerCapture(e.pointerId); }catch(err){}
   noteDevice(e);
+  if(state.charStartTs === null) state.charStartTs = e.timeStamp;
   state.drawing = true;
-  state.current = { points: [], outCount: 0, t0: e.timeStamp };
+  state.current = { points: [], outCount: 0, startTs: e.timeStamp };
   addPoint(e);
   render();
 }
@@ -360,7 +405,11 @@ function onUp(e){
   if(st && st.points.length){
     var t0 = st.points[0].t;
     for(var i=0;i<st.points.length;i++) st.points[i].t = Math.round(st.points[i].t - t0);
-    state.strokes.push({ points: st.points, outCount: st.outCount });
+    state.strokes.push({
+      points: st.points,
+      outCount: st.outCount,
+      startT: Math.round(st.startTs - state.charStartTs)
+    });
     if(state.device.pressure === null) state.device.pressure = false;
   }
   render();
@@ -373,7 +422,15 @@ pad.addEventListener("pointercancel", onUp);
 pad.addEventListener("pointerleave", function(e){ if(state.drawing) onUp(e); });
 pad.addEventListener("contextmenu", function(e){ e.preventDefault(); });
 
-/* ---------- 统计 ---------- */
+/* ---------- 统计与质量检查 ---------- */
+function currentRate(){
+  var rs = state.device.rateSamples;
+  if(!rs.length) return 0;
+  var recent = rs.slice(-300), sum = 0;
+  for(var i=0;i<recent.length;i++) sum += recent[i];
+  return sum / recent.length;
+}
+
 function updateStats(){
   var pts = 0, out = 0;
   for(var i=0;i<state.strokes.length;i++){
@@ -387,53 +444,118 @@ function updateStats(){
   document.getElementById("sOut").textContent = out;
   document.getElementById("sOutWrap").className = out > 0 ? "stat out" : "stat";
 
-  var rs = state.device.rateSamples;
-  if(rs.length){
-    var recent = rs.slice(-300);
-    var sum = 0;
-    for(var j=0;j<recent.length;j++) sum += recent[j];
-    var hz = sum / recent.length;
+  var hz = currentRate();
+  if(hz){
     state.device.rate = hz;
     document.getElementById("bRate").textContent = "采样率：" + Math.round(hz) + " Hz";
   }
 
   var bp = document.getElementById("bPressure");
   if(state.device.pressure === true){ bp.textContent = "压感：支持"; bp.className = "badge ok"; }
-  else if(state.device.pressure === false){ bp.textContent = "压感：不支持（用恒定笔宽）"; bp.className = "badge warn"; }
+  else if(state.device.pressure === false){ bp.textContent = "压感：不支持"; bp.className = "badge warn"; }
   else { bp.textContent = "压感：检测中"; bp.className = "badge"; }
+}
+
+function renderIssues(){
+  var box = document.getElementById("issues");
+  var items = [];
+
+  if(state.device.pressure === false){
+    items.push({ level:"bad", text:"当前设备没有压感。笔画粗细变化无法还原，建议换用数位板或压感笔重新采集。" });
+  } else if(state.device.pressure === true){
+    items.push({ level:"ok", text:"压感正常，可以还原笔画粗细。" });
+  }
+
+  var hz = state.device.rate;
+  if(hz > 0 && hz < MIN_SAMPLING_HZ){
+    items.push({ level:"warn", text:"采样率 " + Math.round(hz) + " Hz 偏低，快速连笔会丢细节，建议换用数位板。" });
+  }
+
+  var out = 0;
+  for(var i=0;i<state.strokes.length;i++) out += state.strokes[i].outCount;
+  if(out > 0){
+    items.push({ level:"warn", text:"有 " + out + " 个采样点超出方格。出格太多会影响字形归一化。" });
+  }
+
+  if(!items.length){
+    items.push({ level:"ok", text:"暂无异常。" });
+  }
+
+  box.innerHTML = "";
+  items.forEach(function(item){
+    var div = document.createElement("div");
+    div.className = "issue " + (item.level === "ok" ? "ok" : item.level === "bad" ? "bad" : "");
+    div.textContent = item.text;
+    box.appendChild(div);
+  });
+}
+
+function renderMilestones(){
+  var done = state.samples.length;
+  var box = document.getElementById("milestones");
+  box.innerHTML = "";
+  var currentAssigned = false;
+  MILESTONES.forEach(function(ms){
+    var span = document.createElement("span");
+    var reached = done >= ms.n;
+    var isCurrent = false;
+    if(!reached && !currentAssigned){ isCurrent = true; currentAssigned = true; }
+    span.className = "ms" + (reached ? " reached" : (isCurrent ? " current" : ""));
+    span.title = ms.tip;
+    span.innerHTML = '<i class="dot"></i>' + ms.n + " 字 · " + ms.label;
+    box.appendChild(span);
+  });
 }
 
 function refreshProgress(){
   var done = state.samples.length;
-  document.getElementById("bProgress").textContent = done + " / " + CHARS.length;
+  document.getElementById("bProgress").textContent = done + " / " + ORDER.length;
   document.getElementById("sDone").textContent = done;
-  var total = 0, strokes = 0;
+
+  var total = 0;
   for(var i=0;i<state.samples.length;i++){
-    var s = state.samples[i];
-    strokes += s.strokes.length;
-    for(var j=0;j<s.strokes.length;j++) total += s.strokes[j].points.length;
+    for(var j=0;j<state.samples[i].strokes.length;j++){
+      total += state.samples[i].strokes[j].length;
+    }
   }
   document.getElementById("sTotalPoint").textContent = total;
   document.getElementById("sAvgPoint").textContent = done ? Math.round(total/done) : 0;
+
   var rates = state.samples.map(function(s){ return s.rate; }).filter(function(v){ return v > 0; });
   var avg = rates.length ? Math.round(rates.reduce(function(a,b){ return a+b; },0)/rates.length) : 0;
   document.getElementById("sAvgRate").textContent = avg ? avg + " Hz" : "—";
 
   var g = document.getElementById("progressGrid");
   g.innerHTML = "";
-  for(var k=0;k<CHARS.length;k++){
-    var cell = document.createElement("i");
-    if(k < state.index) cell.className = "done";
-    if(k === state.index) cell.className = "cur";
-    g.appendChild(cell);
+  var doneSet = {};
+  state.samples.forEach(function(s){ doneSet[s.index] = true; });
+  var skipSet = {};
+  state.skipped.forEach(function(i){ skipSet[i] = true; });
+
+  for(var k=0;k<ORDER.length;k++){
+    var cellEl = document.createElement("i");
+    var cell = cellAt(k);
+    if(doneSet[k]) cellEl.className = "done s" + cell.s;
+    else if(skipSet[k]) cellEl.className = "skip";
+    if(k === state.index) cellEl.className += " cur";
+    cellEl.title = ORDER.charAt(k) + " · " + STRUCTURES[cell.s] + " · " + COMPLEXITIES[cell.c];
+    g.appendChild(cellEl);
   }
-  document.getElementById("curChar").textContent = CHARS[state.index] || "—";
+
+  var cell = cellAt(state.index);
+  document.getElementById("curChar").textContent = ORDER.charAt(state.index) || "—";
+  document.getElementById("curStructure").textContent = STRUCTURES[cell.s] || "";
+  document.getElementById("curComplexity").textContent = COMPLEXITIES[cell.c] || "";
+
+  renderMilestones();
+  renderIssues();
 }
 
 /* ---------- 操作 ---------- */
 function clearCurrent(){
   state.strokes = [];
   state.current = null;
+  state.charStartTs = null;
   render();
 }
 
@@ -441,28 +563,40 @@ function undo(){
   if(state.strokes.length){ state.strokes.pop(); render(); }
 }
 
+function advance(){
+  state.index++;
+  if(state.index >= ORDER.length) state.index = ORDER.length - 1;
+  clearCurrent();
+  refreshProgress();
+}
+
 function commit(skipped){
   var total = 0;
   for(var i=0;i<state.strokes.length;i++) total += state.strokes[i].points.length;
-  if(!skipped && total > 0){
+
+  if(skipped){
+    state.skipped.push(state.index);
+  } else if(total > 0){
     state.samples.push({
-      char: CHARS[state.index],
+      index: state.index,
+      char: ORDER.charAt(state.index),
       strokes: state.strokes.map(function(s){ return s.points; }),
+      strokeStartT: state.strokes.map(function(s){ return s.startT; }),
       rate: Math.round(state.device.rate) || 0,
       pressure: state.device.pressure === true
     });
-    state.saved = false;
     document.getElementById("bSaved").textContent = "未备份";
     document.getElementById("bSaved").className = "badge warn";
+
+    var done = state.samples.length;
+    var hit = MILESTONES.filter(function(m){ return m.n === done; })[0];
+    if(hit) toast("已达到 " + hit.n + " 字 · " + hit.label + "：" + hit.tip);
   }
-  if(state.index < CHARS.length - 1){
-    state.index++;
-  } else {
-    toast("150 个字全部写完，记得导出数据！");
+
+  advance();
+  if(state.samples.length > 0 && state.samples.length % 25 === 0){
+    toast("已写 " + state.samples.length + " 字，建议导出一份备份");
   }
-  clearCurrent();
-  refreshProgress();
-  if(state.index % 25 === 0 && state.index > 0) toast("已写 " + state.index + " 字，建议导出一份备份");
 }
 
 function buildPayload(){
@@ -472,22 +606,24 @@ function buildPayload(){
       device: state.device.type,
       pressureSupported: state.device.pressure === true,
       samplingHz: Math.round(state.device.rate) || null,
-      charCount: CHARS.length,
+      charCount: ORDER.length,
       cellPx: Math.round(state.cell.size),
       devicePixelRatio: state.dpr,
       coordSystem: "归一化到方格，原点在方格左上角，x 向右，y 向下，取值 0~1",
+      orderStrategy: "structure×complexity 覆盖度轮转贪心（scripts/build_curriculum.py）",
       createdAt: new Date().toISOString()
     },
-    samples: state.samples.map(function(s, i){
+    samples: state.samples.map(function(s){
       return {
-        index: i,
+        index: s.index,
         char: s.char,
         strokeCount: s.strokes.length,
         rate: s.rate,
         pressure: s.pressure,
         strokes: s.strokes.map(function(pts){
           return pts.map(function(p){ return [+p.x.toFixed(5), +p.y.toFixed(5), +p.p.toFixed(4), p.t]; });
-        })
+        }),
+        strokeStartT: s.strokeStartT
       };
     })
   };
@@ -511,7 +647,6 @@ function stamp(){
 function exportJSON(){
   if(!state.samples.length){ toast("还没有采集到数据"); return; }
   download("handwriting-" + stamp() + ".json", JSON.stringify(buildPayload(), null, 1), "application/json");
-  state.saved = true;
   document.getElementById("bSaved").textContent = "已备份";
   document.getElementById("bSaved").className = "badge ok";
   toast("已导出 " + state.samples.length + " 个字");
@@ -519,11 +654,12 @@ function exportJSON(){
 
 function exportCSV(){
   if(!state.samples.length){ toast("还没有采集到数据"); return; }
-  var rows = ["sample_index,char,stroke_id,point_id,x,y,pressure,t_ms"];
-  state.samples.forEach(function(s, si){
+  var rows = ["sample_index,char,stroke_id,point_id,x,y,pressure,t_ms,stroke_start_ms"];
+  state.samples.forEach(function(s){
     s.strokes.forEach(function(pts, sti){
       pts.forEach(function(p, pi){
-        rows.push([si, s.char, sti, pi, p.x.toFixed(5), p.y.toFixed(5), p.p.toFixed(4), p.t].join(","));
+        rows.push([s.index, s.char, sti, pi, p.x.toFixed(5), p.y.toFixed(5),
+                   p.p.toFixed(4), p.t, s.strokeStartT[sti]].join(","));
       });
     });
   });
@@ -550,7 +686,11 @@ window.addEventListener("orientationchange", function(){ setTimeout(layout, 200)
 
 refreshProgress();
 layout();
-setTimeout(function(){ document.getElementById("hint").style.display = "none"; }, 6000);
+setTimeout(function(){
+  var hint = document.getElementById("hint");
+  hint.textContent = "前 8 个字覆盖 8 类结构，写完即可做风格推断";
+  setTimeout(function(){ hint.style.display = "none"; }, 8000);
+}, 6000);
 
 })();
 </script>

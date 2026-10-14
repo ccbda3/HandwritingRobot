@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
+from itertools import pairwise
 
 MIN_POINTS_PER_STROKE = 1
 
@@ -56,10 +57,7 @@ class Stroke:
     @property
     def length(self) -> float:
         """笔画折线总长度（归一化单位）。"""
-        return sum(
-            math.hypot(b.x - a.x, b.y - a.y)
-            for a, b in zip(self.points, self.points[1:], strict=False)
-        )
+        return sum(math.hypot(b.x - a.x, b.y - a.y) for a, b in pairwise(self.points))
 
     @property
     def duration_ms(self) -> int:

@@ -9,15 +9,21 @@
 
 ### 新增
 
-- 笔迹采集器 `capture/index.html`：单文件网页，零依赖可离线运行；
-  内置 150 字表；采集带笔序、时序、抬落笔与压感的联机笔迹；
-  自动检测压感支持与实际采样率；导出 JSON / CSV
+- **风格特征提取** `handwriting.style`：从轨迹中提取 14 维风格向量
+  （倾角、宽高比、墨迹密度、直线度、转折角、折笔锐度与密度、笔画长度变异、
+  压感均值/标准差/提按、书写速度均值/标准差、抬笔比），
+  并带可用性掩码——无压感设备的压感特征为 `None` 而非 0
+- **主动选字** `handwriting.curriculum`：150 字表带「结构 × 复杂度」元数据，
+  按覆盖度轮转贪心排序。前 8 个字人工策展为覆盖 8 个不同格子，
+  以「永」居首（永字八法含全部八种基本笔画）
+- **采集器升级**：按覆盖度顺序提示待写字、实时质量检查面板、
+  按结构着色的进度网格、8/40/150 字里程碑、导出新增 `strokeStartT` 字段
+- `scripts/build_curriculum.py`：生成字表顺序与元数据常量
 - C++17 核心库 `core/`：轨迹数据结构、几何变换、等比归一化、G 代码生成
 - Python 侧 `src/handwriting/`：轨迹数据结构、数据集读取与质量体检、G 代码生成
-- 性能基准：`benchmarks/cpp/bench_pipeline.cpp` 与 `benchmarks/python/bench_pipeline.py`
-  使用相同合成负载，可直接对比
-- 单元测试：C++ 2 个测试程序（CTest）、Python 46 个用例
-- 文档：系统架构、数据格式规范、4 条架构决策记录
+- 性能基准：`benchmarks/cpp/` 与 `benchmarks/python/` 使用相同合成负载，可直接对比
+- 单元测试：C++ 2 个测试程序（CTest）、Python 119 个用例
+- 文档：系统架构、数据格式规范、5 条架构决策记录
 - 工程规范：Apache-2.0 许可、`.editorconfig`、`.gitattributes`、`.clang-format`、
   pre-commit 钩子、GitHub Actions CI、Issue/PR 模板
 
@@ -29,6 +35,8 @@
 - **输入通道调整**：原「以手写照片为主要输入」被
   [ADR-0002](docs/adr/0002-online-trajectory-over-offline-images.md) 取代。
   改为以联机笔迹为主通道，照片降级为可选的第二通道。
+- **采集与学习策略**：[ADR-0005](docs/adr/0005-progressive-guided-collection.md)
+  明确「实时采集 + 前向推理 + 离线微调」三阶段，不做逐字增量训练。
 - `perf(core)`：G 代码生成的数字格式化从 `ostringstream` 换成 `snprintf`，
   48000 点负载下从 63.12 ms 降到 37.42 ms
 
@@ -36,6 +44,8 @@
 
 - 单点笔画（点）此前不产生任何 G 代码，现在会落笔、驻留 0.05 s、抬笔，
   在纸面留下墨点
+- 重采样末段短于 1e-6 时不再补端点。此前浮点累积（如 25 × 0.02 ≠ 0.5）
+  会产生长度接近 0 的末段，其方向由浮点噪声主导，算出的转折角完全错误
 
 ### 安全
 

@@ -13,6 +13,7 @@
 | [0002](0002-online-trajectory-over-offline-images.md) | 以联机笔迹而非离线图像作为风格来源 | 已接受 |
 | [0003](0003-cpp-core-python-for-training.md) | C++ 核心库 + Python 仅用于训练 | 已接受 |
 | [0004](0004-license-and-third-party-data.md) | 许可策略与第三方数据合规 | 已接受 |
+| [0005](0005-progressive-guided-collection.md) | 渐进式引导采集，而非实时增量训练 | 已接受 |
 
 ## 模板
 

@@ -57,6 +57,17 @@ EM_MAX_X = 1024.0
 EM_MAX_Y = 900.0
 EM_SIZE = EM_MAX_X - EM_MIN_X
 
+BASELINE_RATIO = (EM_MAX_Y - 0.0) / EM_SIZE
+"""基线在归一化坐标中的位置（0.87890625）。
+
+字压在横线上时用它从基线反推字格顶部::
+
+    top_y = baseline_y - BASELINE_RATIO * char_size
+
+若按字格顶部对齐，字会整体浮在横线上方约 12% 字高的位置 ——
+在预览里看是「差不多对」，写出来就是明显偏高。
+"""
+
 DEFAULT_BASE_URLS: tuple[str, ...] = (
     "https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/",
     "https://unpkg.com/hanzi-writer-data@2.0.1/",

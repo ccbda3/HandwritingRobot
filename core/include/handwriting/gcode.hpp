@@ -9,9 +9,10 @@
 #include <string>
 #include <vector>
 
+#include "handwriting/layout.hpp"
 #include "handwriting/trajectory.hpp"
 
-namespace handwriting {
+namespace handwriting::gcode {
 
 struct PlotSettings {
     // 版面
@@ -45,6 +46,7 @@ struct PlotSettings {
 struct PlotStats {
     std::size_t stroke_count{0};
     std::size_t point_count{0};
+    std::size_t line_count{0};
     double draw_length_mm{0.0};
     double travel_length_mm{0.0};
     double estimated_seconds{0.0};
@@ -80,4 +82,20 @@ private:
 [[nodiscard]] std::string strokes_to_gcode(const std::vector<std::vector<StrokeSet>>& rows,
                                           const PlotSettings& settings = {});
 
-}  // namespace handwriting
+struct Program {
+    std::string text;
+    PlotStats stats;
+};
+
+// 按版面字格生成 G 代码。
+//
+// 这是 Qt 前端与命令行共用的正式入口：版面（字格位置、字宽）由
+// :mod:`handwriting::layout` 统一计算，本函数只负责把字形摆到字格里
+// 并翻译成 G 代码。这样预览画出来的位置与机器实际走的位置必然一致。
+//
+// glyphs 与 page.cells 按书写顺序一一对应；数量不等时以较少者为准。
+[[nodiscard]] Program glyphs_to_gcode(const std::vector<StrokeSet>& glyphs,
+                                      const layout::Page& page,
+                                      const PlotSettings& settings = {});
+
+}  // namespace handwriting::gcode

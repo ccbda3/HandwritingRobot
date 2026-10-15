@@ -13,10 +13,54 @@
  │               Catmull-Rom 样条平滑 + 按弧长重采样
  │               倾斜 / 抖动 / 笔压合成 / 时序合成
  │
- ├─ gcode.py     归一化轨迹 → 毫米版面 → GRBL G 代码
+ ├─ layout.py    版面：每个字的字格位置与字宽
+ │               横条本（字压横线）或自由版面
  │
- └─ preview.py   同一套版面 → SVG 预览（不动机器也能看到结果）
+ ├─ gcode.py     字格 + 字形 → GRBL G 代码
+ │
+ └─ preview.py   同一个 Page → SVG 预览（不动机器也能看到结果）
 ```
+
+C++ 侧（`core/`）有一份等价实现，Qt 前端直接链接它，不启动 Python 子进程。
+两份实现的行为由 `tests/test_layout.py::TestCrossImplementation` 实际调用
+`hr-layout-dump` 工具逐位比对 —— 漂移会让预览与导出不一致，而这类偏差肉眼看不出来。
+
+## 版面：字压在横线上
+
+`layout.py` 产出 `Page`，其中每个字一个 `Cell`（字格左上角、字宽、基线位置）。
+**G 代码生成与 SVG 预览共用同一个 Page**，因此预览里的位置就是机器实际走的位置。
+
+两种模式：
+
+| 模式 | 用途 | 字格来源 |
+|---|---|---|
+| `Notebook` | 横条本（作业本） | 按页宽与行数均分，字压在横线上 |
+| `Grid` | 空白纸 | 固定字格 + 字距 + 行距 + 页边距 |
+
+### 为什么必须按基线定位，而不是按字格顶部
+
+字形数据里基线固定在归一化坐标的 **0.8789** 处（`kBaselineRatio = 900/1024`）。
+所以「字压在横线上」要反推字格顶部：
+
+```
+top_y = baseline_y − 0.8789 × char_size
+```
+
+若按字格顶部对齐，字会整体**浮在横线上方约 12% 字高**的位置 ——
+在预览里看是「差不多对」，写出来就是明显偏高。这是最容易写错的一处，
+`tests/test_layout.py::TestBaselineOnRule` 专门守这条性质。
+
+### 默认参数
+
+作业本（横条本）去掉页边距后的书写区：
+
+| 参数 | 默认值 |
+|---|---|
+| 书写区 | 150 × 213 mm |
+| 横线行数 | 22 |
+| 行距 | 213 / 22 = **9.68 mm** |
+| 字宽 | 自动 = 行距 = 9.68 mm |
+| 每行字数 | 自动 = ⌊150 / 9.68⌋ = **15 字** |
 
 ## 数据源
 
@@ -97,12 +141,20 @@ em 框取 `x ∈ [0, 1024]`、`y ∈ [-124, 900]`。这个范围不是拍脑袋�
 ## 用法
 
 ```bash
+# Qt 预览工具（开发期主力）：改参数实时出图
+./build/app/handwriting-studio.exe
+
 # 预取字形（需要联网；之后可离线使用）
 python -m handwriting.cli preload "春眠不觉晓"
 
-# 生成 G 代码 + SVG 预览
-python -m handwriting.cli render "春眠不觉晓" -o chun.nc --svg chun.svg \
-    --chars-per-line 10 --char-size 20 --slant 3
+# 横条本排版（默认）
+python -m handwriting.cli render "春眠不觉晓" -o chun.nc --svg chun.svg
+
+# 自由版面
+python -m handwriting.cli render "春眠不觉晓" --mode grid --char-size 20
+
+# 从第 3 行开始写、每行 18 字
+python -m handwriting.cli render "春眠不觉晓" --first-line 3 --chars-per-line 18
 
 # 只看统计不写文件
 python -m handwriting.cli render "永" --dry-run
@@ -114,6 +166,12 @@ python -m handwriting.cli render "永" -o yong.nc --spindle
 CLI 会打印**串口传输时间**估算。这是整条链路的真实瓶颈：
 GRBL @ 115200 baud 约 380 行/秒，而计算只占端到端耗时的 0.02%
 （见 [architecture.md](architecture.md)）。
+
+Qt 工具另支持无头快照，用于确认布局没写崩：
+
+```bash
+QT_QPA_PLATFORM=offscreen ./build/app/handwriting-studio.exe --snapshot preview.png
+```
 
 ## 已知限制
 

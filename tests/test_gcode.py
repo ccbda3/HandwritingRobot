@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 
 import pytest
 
@@ -79,7 +80,7 @@ class TestSettings:
         """抬笔已经是 M5，页脚再写一次会输出两个连续 M5。"""
         settings = PlotSettings(use_z_axis=False)
         lines = strokes_to_gcode([[single_char()]], settings).strip().splitlines()
-        for before, after in zip(lines, lines[1:], strict=False):
+        for before, after in pairwise(lines):
             assert not (before == "M5" and after == "M5")
 
     def test_z_mode_keeps_footer_m5(self) -> None:

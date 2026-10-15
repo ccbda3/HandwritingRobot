@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
+from handwriting.layout import Page
 from handwriting.stroke import Point, StrokeSet
 
 DEFAULT_HEADER = ("G21", "G90", "G17")
@@ -220,6 +221,7 @@ def strokes_to_gcode_with_stats(
     rows: Iterable[Sequence[StrokeSet]],
     settings: PlotSettings | None = None,
 ) -> _GcodeResult:
+    """按行分组生成。保留此入口是为了兼容「行内固定字距」的通用排版。"""
     s = settings or PlotSettings()
     writer = _Writer(s)
     for line in s.header:
@@ -230,6 +232,32 @@ def strokes_to_gcode_with_stats(
             origin_x, origin_y = char_origin(row_index, col_index, s)
             for stroke in stroke_set.strokes:
                 writer.plot_stroke(stroke.points, (origin_x, origin_y), s.char_size_mm)
+
+    stats = writer.finish()
+    return _GcodeResult(stats)
+
+
+def glyphs_to_gcode_with_stats(
+    glyphs: Sequence[StrokeSet],
+    page: Page,
+    settings: PlotSettings | None = None,
+) -> _GcodeResult:
+    """按版面字格生成 G 代码。
+
+    这是正式入口：字格位置与字宽由 :mod:`handwriting.layout` 统一计算，
+    本函数只负责把字形摆进字格并翻译成 G 代码。这样预览画出来的位置
+    与机器实际走的位置必然一致。
+
+    与 C++ 侧 ``handwriting::gcode::glyphs_to_gcode`` 行为等价。
+    """
+    s = settings or PlotSettings()
+    writer = _Writer(s)
+    for line in s.header:
+        writer.raw(line)
+
+    for glyph, cell in zip(glyphs, page.cells, strict=False):
+        for stroke in glyph.strokes:
+            writer.plot_stroke(stroke.points, (cell.x_mm, cell.y_mm), cell.size_mm)
 
     stats = writer.finish()
     return _GcodeResult(stats)

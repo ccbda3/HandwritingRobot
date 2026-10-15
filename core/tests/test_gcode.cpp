@@ -7,11 +7,11 @@
 #include <string>
 #include <vector>
 
-using handwriting::PlotSettings;
+using handwriting::gcode::PlotSettings;
 using handwriting::Point;
 using handwriting::Stroke;
 using handwriting::StrokeSet;
-using handwriting::strokes_to_gcode;
+using handwriting::gcode::strokes_to_gcode;
 
 namespace {
 
@@ -96,11 +96,13 @@ int main() {
     HR_CHECK(two_rows[1] == "G0 X12 Y44");
 
     // ---- 统计 ----
-    handwriting::GcodeBuilder builder;
+    handwriting::gcode::GcodeBuilder builder;
     builder.plot_stroke(single_char().strokes().front(), 10.0, 10.0, 20.0);
     builder.finish();
     HR_CHECK(builder.stats().stroke_count == 1);
     HR_CHECK(builder.stats().point_count == 2);
+    // 行数用于估算串口传输时间 —— 那是整条链路的真实瓶颈
+    HR_CHECK(builder.stats().line_count == builder.lines().size());
     HR_CHECK_NEAR(builder.stats().draw_length_mm, std::sqrt(32.0));
     HR_CHECK_NEAR(builder.stats().travel_length_mm, std::sqrt(20.0));
     HR_CHECK_NEAR(builder.stats().estimated_seconds,

@@ -15,9 +15,9 @@
 #include "handwriting/gcode.hpp"
 #include "handwriting/trajectory.hpp"
 
-using handwriting::GcodeBuilder;
+using handwriting::gcode::GcodeBuilder;
 using handwriting::Point;
-using handwriting::PlotSettings;
+using handwriting::gcode::PlotSettings;
 using handwriting::Stroke;
 using handwriting::StrokeSet;
 
@@ -98,7 +98,7 @@ int main() {
 
     // 2) G 代码生成
     std::string program;
-    const double gcode_ms = time_ms([&] { program = handwriting::strokes_to_gcode(rows); });
+    const double gcode_ms = time_ms([&] { program = handwriting::gcode::strokes_to_gcode(rows); });
 
     GcodeBuilder probe;
     for (const auto& row : rows) {

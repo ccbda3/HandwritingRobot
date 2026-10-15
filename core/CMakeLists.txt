@@ -1,6 +1,12 @@
 add_library(handwriting_core STATIC
+    src/curve.cpp
     src/gcode.cpp
+    src/glyph.cpp
+    src/json.cpp
+    src/layout.cpp
+    src/render.cpp
     src/trajectory.cpp
+    src/utf8.cpp
 )
 
 add_library(handwriting::core ALIAS handwriting_core)
@@ -26,4 +32,29 @@ if(HR_BUILD_TESTS)
     add_executable(test_gcode tests/test_gcode.cpp)
     target_link_libraries(test_gcode PRIVATE handwriting_core)
     add_test(NAME cpp.gcode COMMAND test_gcode)
+
+    add_executable(test_json tests/test_json.cpp)
+    target_link_libraries(test_json PRIVATE handwriting_core)
+    add_test(NAME cpp.json COMMAND test_json)
+
+    add_executable(test_curve tests/test_curve.cpp)
+    target_link_libraries(test_curve PRIVATE handwriting_core)
+    add_test(NAME cpp.curve COMMAND test_curve)
+
+    add_executable(test_glyph tests/test_glyph.cpp)
+    target_link_libraries(test_glyph PRIVATE handwriting_core)
+    add_test(NAME cpp.glyph COMMAND test_glyph)
+
+    add_executable(test_render tests/test_render.cpp)
+    target_link_libraries(test_render PRIVATE handwriting_core)
+    add_test(NAME cpp.render COMMAND test_render)
+
+    add_executable(test_layout tests/test_layout.cpp)
+    target_link_libraries(test_layout PRIVATE handwriting_core)
+    add_test(NAME cpp.layout COMMAND test_layout)
+
+    # 版面导出工具。Python 侧调用它做跨语言一致性校验，
+    # 防止 C++ 与 Python 两份版面实现悄悄漂移（见 ADR-0003 的后果一节）。
+    add_executable(hr-layout-dump tools/layout_dump.cpp)
+    target_link_libraries(hr-layout-dump PRIVATE handwriting_core)
 endif()

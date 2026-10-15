@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-namespace handwriting {
+namespace handwriting::gcode {
 
 namespace {
 
@@ -127,6 +127,7 @@ void GcodeBuilder::finish() {
             lines_.push_back(line);
         }
     }
+    stats_.line_count = lines_.size();
     stats_.estimated_seconds =
         stats_.draw_length_mm / (settings_.feed_draw / 60.0) +
         stats_.travel_length_mm / (settings_.feed_travel / 60.0);
@@ -162,4 +163,20 @@ std::string strokes_to_gcode(const std::vector<std::vector<StrokeSet>>& rows,
     return builder.str();
 }
 
-}  // namespace handwriting
+Program glyphs_to_gcode(const std::vector<StrokeSet>& glyphs, const layout::Page& page,
+                        const PlotSettings& settings) {
+    GcodeBuilder builder(settings);
+    const std::size_t count = std::min(glyphs.size(), page.cells.size());
+
+    for (std::size_t i = 0; i < count; ++i) {
+        const layout::Cell& cell = page.cells[i];
+        for (const Stroke& stroke : glyphs[i].strokes()) {
+            builder.plot_stroke(stroke, cell.x_mm, cell.y_mm, cell.size_mm);
+        }
+    }
+
+    builder.finish();
+    return Program{builder.str(), builder.stats()};
+}
+
+}  // namespace handwriting::gcode

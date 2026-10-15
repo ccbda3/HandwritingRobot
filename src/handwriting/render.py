@@ -217,12 +217,14 @@ def render_text(
 
     - 换行符 ``\\n`` 强制断行
     - 空白字符（空格、制表符）跳过
-    - ``chars_per_line`` 为 ``None`` 时不自动折行
+    - ``chars_per_line`` 为 ``None`` 或 ``0`` 时不自动折行
+      （与 C++ 侧一致：折行统一交给 :mod:`handwriting.layout` 处理，
+      避免渲染与版面各折一次）
     - 字形库中缺失的字符被跳过并记录在 :attr:`RenderResult.missing`，
       不影响其余字符 —— 生僻字或标点缺失不该让整段文本渲染不出来
     """
-    if chars_per_line is not None and chars_per_line < 1:
-        raise ValueError(f"chars_per_line 必须 ≥ 1 或为 None，收到 {chars_per_line}")
+    if chars_per_line is not None and chars_per_line < 0:
+        raise ValueError(f"chars_per_line 不能为负，收到 {chars_per_line}")
 
     config = settings if settings is not None else RenderSettings()
     active = source if source is not None else HanziWriterSource()
@@ -241,7 +243,7 @@ def render_text(
             continue
         if char.isspace():
             continue
-        if chars_per_line is not None and len(current) >= chars_per_line:
+        if chars_per_line and len(current) >= chars_per_line:
             rows.append(current)
             current = []
 

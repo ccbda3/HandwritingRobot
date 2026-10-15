@@ -1,62 +1,105 @@
 // Qt 桌面前端主窗口。
 //
-// 架构约定（见 docs/adr/0003-qt-frontend-python-subprocess.md）：
-//   本进程只负责交互与渲染，不做任何 AI 推理。
-//   推理由独立的 Python 子进程承担，通过标准输入输出以长度前缀二进制帧通信，
-//   避免 UI 阻塞，也规避在 C++ 中嵌入 Python 解释器带来的内存管理问题。
-
+// 架构约定（见 docs/adr/0003-cpp-core-python-for-training.md）：
+//   本进程直接链接 C++ 核心库完成字形加载、渲染与 G 代码生成，
+//   **不启动 Python 子进程、不做序列化**。
+//   唯一需要 Python 的地方是预取字形数据（handwriting preload），
+//   因为核心库刻意不含 HTTP 客户端。
+//
+// 预览与导出共用同一份数据（同一个 Page + 同一批 StrokeSet），
+// 因此「看到的」与「写出来的」必然一致。
 #pragma once
 
 #include <QMainWindow>
 #include <QString>
-#include <QVector>
 
+#include <vector>
+
+#include "handwriting/gcode.hpp"
+#include "handwriting/layout.hpp"
+#include "handwriting/render.hpp"
+#include "handwriting/trajectory.hpp"
+
+class QCheckBox;
+class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
-class QProcess;
-
-// 简单的笔画画布：只做坐标变换与绘制，不含业务逻辑。
-class StrokeCanvas : public QWidget {
-    Q_OBJECT
-
-public:
-    explicit StrokeCanvas(QWidget* parent = nullptr);
-
-    // 传入手写机器人坐标系下的笔迹（单位 mm），按书写顺序绘制。
-    void setStrokes(const QVector<QVector<QPointF>>& strokes);
-    void clear();
-
-    QSize sizeHint() const override;
-
-protected:
-    void paintEvent(QPaintEvent* event) override;
-
-private:
-    QVector<QVector<QPointF>> strokes_;
-    QRectF contentBounds() const;
-};
+class QLineEdit;
+class QPlainTextEdit;
+class QSpinBox;
+class QTimer;
+class PreviewCanvas;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
     explicit MainWindow(QWidget* parent = nullptr);
-    ~MainWindow() override;
 
 private slots:
-    void startBackend();
-    void stopBackend();
-    void readBackendStdout();
-    void readBackendStderr();
-    void onBackendFinished(int exitCode);
+    void scheduleRefresh();
+    void refresh();
+    void resetLayoutDefaults();
     void exportGcode();
+    void exportPreviewImage();
+    void browseGlyphCache();
+    void openGlyphCacheFolder();
 
 private:
-    void buildActions();
-    void buildLayout();
-    void setBackendStatus(const QString& text, bool healthy);
+    struct Rendered {
+        handwriting::layout::Page page;
+        std::vector<handwriting::StrokeSet> glyphs;
+        std::vector<std::string> missing;
+        std::string missing_detail;
+        bool ok{false};
+        QString error;
+    };
 
-    StrokeCanvas* canvas_ = nullptr;
-    QLabel* backend_label_ = nullptr;
-    QLabel* hint_label_ = nullptr;
-    QProcess* backend_ = nullptr;
+    void buildUi();
+    void buildMenus();
+    void buildStatusBar();
+
+    [[nodiscard]] handwriting::render::Settings renderSettings() const;
+    [[nodiscard]] handwriting::layout::Settings layoutSettings() const;
+    [[nodiscard]] handwriting::gcode::PlotSettings plotSettings() const;
+    [[nodiscard]] Rendered renderNow() const;
+    void updateStatus(const Rendered& rendered);
+    void updateModeEnabled();
+
+    // ---- 文本与画布 ----
+    QPlainTextEdit* text_edit_{nullptr};
+    PreviewCanvas* canvas_{nullptr};
+
+    // ---- 版面 ----
+    QComboBox* mode_combo_{nullptr};
+    QDoubleSpinBox* page_width_{nullptr};
+    QDoubleSpinBox* page_height_{nullptr};
+    QSpinBox* line_count_{nullptr};
+    QSpinBox* first_line_{nullptr};
+    QDoubleSpinBox* char_size_{nullptr};
+    QSpinBox* chars_per_line_{nullptr};
+    QCheckBox* show_cells_{nullptr};
+    QCheckBox* show_rules_{nullptr};
+
+    // ---- 字形 ----
+    QDoubleSpinBox* slant_{nullptr};
+    QDoubleSpinBox* jitter_{nullptr};
+    QDoubleSpinBox* pressure_amp_{nullptr};
+
+    // ---- 机器 ----
+    QComboBox* pen_combo_{nullptr};
+    QDoubleSpinBox* feed_draw_{nullptr};
+    QDoubleSpinBox* pen_up_z_{nullptr};
+    QDoubleSpinBox* pen_down_z_{nullptr};
+
+    // ---- 数据源 ----
+    QLineEdit* cache_edit_{nullptr};
+
+    // ---- 状态栏 ----
+    QLabel* status_chars_{nullptr};
+    QLabel* status_page_{nullptr};
+    QLabel* status_machine_{nullptr};
+    QLabel* status_zoom_{nullptr};
+
+    QTimer* refresh_timer_{nullptr};
 };

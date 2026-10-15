@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from handwriting.gcode import PlotSettings, char_origin, page_size
+from handwriting.layout import Page
 from handwriting.stroke import Stroke, StrokeSet
 
 DEFAULT_INK = "#141414"
@@ -39,25 +39,30 @@ class SvgStyle:
     """笔压对线宽的贡献。设为 0 则所有笔画等宽。"""
     show_grid: bool = True
     grid_color: str = "#e8e8e8"
+    show_rules: bool = True
+    rule_color: str = "#c8d4e0"
     show_stroke_order: bool = False
     order_color: str = "#c0392b"
     decimals: int = 3
 
 
 def to_svg(
-    rows: Sequence[Sequence[StrokeSet]],
-    settings: PlotSettings | None = None,
+    glyphs: Sequence[StrokeSet],
+    page: Page,
     style: SvgStyle | None = None,
 ) -> str:
-    """把按行分组的字形轨迹渲染成 SVG 字符串。
+    """把字形按版面渲染成 SVG 字符串。
 
     输出的 viewBox 直接使用毫米坐标，与机床坐标系一一对应，
     因此可以在浏览器里量尺寸、直接对照实际输出。
-    """
-    cfg = settings if settings is not None else PlotSettings()
-    look = style if style is not None else SvgStyle()
 
-    width, height = page_size(len(rows), cfg)
+    与 G 代码生成共用同一个 :class:`~handwriting.layout.Page`，
+    因此预览里的位置就是机器实际走的位置。
+    """
+    look = style if style is not None else SvgStyle()
+    width = page.width_mm
+    height = page.height_mm
+
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {_n(width, look.decimals)} {_n(height, look.decimals)}" '
@@ -66,13 +71,11 @@ def to_svg(
         f'height="{_n(height, look.decimals)}" fill="{look.paper}"/>',
     ]
 
-    if look.show_grid:
-        parts.extend(_grid(rows, cfg, look))
+    parts.extend(_rules(page, look))
+    parts.extend(_grid(page, look))
 
-    for row_index, row in enumerate(rows):
-        for col_index, stroke_set in enumerate(row):
-            origin_x, origin_y = char_origin(row_index, col_index, cfg)
-            parts.extend(_render_glyph(stroke_set, origin_x, origin_y, cfg, look))
+    for glyph, cell in zip(glyphs, page.cells, strict=False):
+        parts.extend(_render_glyph(glyph, cell.x_mm, cell.y_mm, cell.size_mm, look))
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -82,10 +85,9 @@ def _render_glyph(
     stroke_set: StrokeSet,
     origin_x: float,
     origin_y: float,
-    settings: PlotSettings,
+    size: float,
     style: SvgStyle,
 ) -> list[str]:
-    size = settings.char_size_mm
     out: list[str] = []
 
     for order, stroke in enumerate(stroke_set.strokes, start=1):
@@ -192,22 +194,30 @@ def _width(pressure: float, style: SvgStyle) -> float:
     return style.base_width + style.pressure_width * clamped
 
 
-def _grid(
-    rows: Sequence[Sequence[StrokeSet]],
-    settings: PlotSettings,
-    style: SvgStyle,
-) -> list[str]:
+def _grid(page: Page, style: SvgStyle) -> list[str]:
     """画出每个字的字格，便于检查字距与出格。"""
+    if not style.show_grid:
+        return []
     out: list[str] = []
-    size = settings.char_size_mm
-    for row_index, row in enumerate(rows):
-        for col_index in range(len(row)):
-            x, y = char_origin(row_index, col_index, settings)
-            out.append(
-                f'<rect x="{_n(x, 3)}" y="{_n(y, 3)}" width="{_n(size, 3)}" '
-                f'height="{_n(size, 3)}" fill="none" stroke="{style.grid_color}" '
-                f'stroke-width="0.1"/>'
-            )
+    for cell in page.cells:
+        out.append(
+            f'<rect x="{_n(cell.x_mm, 3)}" y="{_n(cell.y_mm, 3)}" '
+            f'width="{_n(cell.size_mm, 3)}" height="{_n(cell.size_mm, 3)}" '
+            f'fill="none" stroke="{style.grid_color}" stroke-width="0.1"/>'
+        )
+    return out
+
+
+def _rules(page: Page, style: SvgStyle) -> list[str]:
+    """画出横条本的横线。字应当压在这些线上。"""
+    if not style.show_rules or not page.rule_lines_mm:
+        return []
+    out: list[str] = []
+    for y_mm in page.rule_lines_mm:
+        out.append(
+            f'<line x1="0" y1="{_n(y_mm, 3)}" x2="{_n(page.width_mm, 3)}" '
+            f'y2="{_n(y_mm, 3)}" stroke="{style.rule_color}" stroke-width="0.15"/>'
+        )
     return out
 
 

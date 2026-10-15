@@ -46,6 +46,7 @@ htmlcov/
 
 # ---- C++ / CMake / Qt ----
 build/
+build-*/
 out/
 cmake-build-*/
 CMakeCache.txt

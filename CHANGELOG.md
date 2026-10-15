@@ -9,15 +9,26 @@
 
 ### 新增
 
+- **Qt 桌面预览工具**：左侧参数面板 + 右侧实时预览（改参数 120 ms 防抖后自动重算），
+  支持缩放（滚轮，以光标为锚点）、平移（拖拽）、适应窗口、导出 G 代码与预览图。
+  按 ADR-0003 直接链接 C++ 核心库，**不启动 Python 子进程**。
+  另提供无头快照（`--snapshot`）用于确认布局没写崩
+- **横条本版面**（`handwriting.layout` / `core/layout.cpp`）：
+  按页宽与行数均分字格，**字压在横线上**。
+  默认 150×213 mm / 22 行 —— 作业本去掉页边距后的书写区，
+  行距 9.68 mm，字宽自动等于行距，每行 15 字。
+  另保留自由版面模式（固定字格 + 字距 + 行距 + 页边距）
+- **C++ 侧补齐生成管线**，使 Qt 前端可以完全不依赖 Python：
+  - `json`：零依赖 JSON 解析器（object/array/string 含转义与代理对/number/bool/null）
+  - `utf8`：字符切分与码位解码（汉字占 3 字节，「第 i 个字符」≠「第 i 个字节」）
+  - `curve`：Catmull-Rom 样条插值 + 按弧长重采样
+  - `glyph`：从本地缓存读取笔画中心线（**C++ 侧刻意不联网**）
+  - `render`：倾斜、抖动、笔压合成、时序合成
+  - `layout`：横条本与自由版面
+- `hr-layout-dump` 工具：供 Python 侧逐位比对两份版面实现
 - **字形管线**：文本 → 标准笔顺骨架 → 归一化轨迹 → G 代码 → SVG 预览。
   这条链路不依赖任何 AI 模型，可先把机械精度、笔压一致性、串口时序这些
   真正的风险暴露出来。详见 [docs/glyph-pipeline.md](docs/glyph-pipeline.md)
-  - `handwriting.glyph`：从 hanzi-writer-data 按需下载笔画中心线并本地缓存；
-    `medians` 字段自带**正确的笔顺**
-  - `handwriting.curve`：Catmull-Rom 样条插值 + 按弧长重采样
-  - `handwriting.render`：坐标转换、倾斜、抖动、笔压合成、时序合成
-  - `handwriting.preview`：SVG 预览，与 G 代码共用同一套版面计算
-  - `handwriting.cli`：`render` 与 `preload` 子命令
 - **风格特征提取** `handwriting.style`：从轨迹中提取 14 维风格向量
   （倾角、宽高比、墨迹密度、直线度、转折角、折笔锐度与密度、笔画长度变异、
   压感均值/标准差/提按、书写速度均值/标准差、抬笔比），
@@ -30,13 +41,21 @@
 - `scripts/build_curriculum.py`：生成字表顺序与元数据常量
 - C++17 核心库 `core/`：轨迹数据结构、几何变换、等比归一化、G 代码生成
 - 性能基准：`benchmarks/cpp/` 与 `benchmarks/python/` 使用相同合成负载，可直接对比
-- 单元测试：C++ 2 个测试程序（CTest）、Python 227 个用例（含 5 个联网用例）
+- 单元测试：C++ 7 个测试程序（CTest）、Python 262 个用例（含 5 个联网用例）
 - 文档：系统架构、字形管线、数据格式规范、5 条架构决策记录
 - 工程规范：Apache-2.0 许可、`.editorconfig`、`.gitattributes`、`.clang-format`、
   pre-commit 钩子、GitHub Actions CI、Issue/PR 模板
 
 ### 变更
 
+- **命令行默认改为横条本排版**。此前是「固定字格 + 字距」的自由版面，
+  现默认按作业本（150×213 mm / 22 行）排版，字压在横线上。
+  需要旧行为加 `--mode grid`
+- `handwriting::gcode` 移入嵌套命名空间，与 `glyph` / `render` / `layout` / `curve` 统一
+- `PlotStats` 补充 `line_count` 字段（Python 侧本就有，C++ 侧此前遗漏）
+- `render_text` 的 `chars_per_line` 统一契约：`None` 与 `0` 都表示不自动折行，
+  折行交给 `layout` 处理。此前 Python 侧拒绝 `0` 而 C++ 侧接受，
+  两份实现的契约不一致
 - **架构调整**：原「Qt 前端 + Python 子进程 + JSON 通信」方案被
   [ADR-0003](docs/adr/0003-cpp-core-python-for-training.md) 取代。
   改为 C++ 核心库 + Python 仅用于训练，Qt 前端直接链接核心库。
@@ -50,14 +69,31 @@
 
 ### 修复
 
+- **MinGW 下 Qt 前端启动即崩溃**：Qt 的 mingw_64 包自带一个用较旧 MinGW 编译的
+  `libstdc++-6.dll`，运行时会优先加载它；本工程用 GCC 15 编译，构造
+  `std::ifstream` 这类触及 `std::locale` 的对象就在该 DLL 内 SIGSEGV，
+  栈回溯只指向 libstdc++，完全看不出是自己的代码问题。
+  改为静态链接 libstdc++ / libgcc
+- **抖动随机数范围错误**：`mt19937` 输出 32 位，但按 64 位写法右移 11 位，
+  导致均匀数落在 `[0, 2⁻³²]` 而不是 `[0, 1)`，抖动幅度几乎为零且完全看不出错。
+  改为除以 2³²，并把测试从「单点不超 5σ」改为「大量样本的标准差等于设定幅度」
+- **预览首次刷新时缩放算错**：控件初始尺寸是 `minimumSize`，
+  首次计算出的缩放偏小且页面不居中。增加 `resizeEvent` 重新适应，
+  并在用户手动缩放/平移后关闭自动适应
+- **预览线宽换算错误**：`width_mm()` 已经是毫米，却又乘了一次字宽，
+  导致笔画粗了约 10 倍
 - **倾斜角符号与文档不一致**：`slant_deg` 文档写「右倾为正」，
   但实现用 `atan2(dx, dy)` 会对右倾给出负值。右倾竖笔是顶偏右、底偏左，
   沿笔画向下 dx < 0，因此需要取反。已在 `style` 与 `render` 两侧统一，
   并加跨模块一致性测试防回归
-- **字形下载无重试**：CDN 偶发断连（`Remote end closed connection`）是常态，
-  预取 150 字时几乎必然遇到。改为指数退避重试 3 次，404 不重试
+- **字形下载无重试、无镜像**：CDN 偶发断连（`Remote end closed connection`）是常态，
+  预取 150 字时几乎必然遇到。改为指数退避重试 3 次 + 多镜像回退（jsdelivr → unpkg）
+- **`.gitignore` 逐条列扩展名漏掉 `.nc` / `.svg`**，导致生成的 G 代码被误纳入提交。
+  改为白名单 `data/*` + 两个例外 —— 逐条列举迟早会漏，而漏掉的后果是
+  用户笔迹数据被提交进公开仓库
 - 单点笔画（点）此前不产生任何 G 代码，现在会落笔、驻留 0.05 s、抬笔，
   在纸面留下墨点
+- 主轴模式不再输出连续两个 `M5`（抬笔本身是 M5，页脚又补了一个）
 - 重采样末段短于 1e-6 时不再补端点。此前浮点累积（如 25 × 0.02 ≠ 0.5）
   会产生长度接近 0 的末段，其方向由浮点噪声主导，算出的转折角完全错误
 

@@ -239,9 +239,18 @@ class TestRenderText:
         result = render_text("\n\n\n", FakeSource("永"))
         assert result.is_empty
 
-    def test_rejects_invalid_chars_per_line(self) -> None:
-        with pytest.raises(ValueError, match="chars_per_line"):
-            render_text("永", FakeSource("永"), chars_per_line=0)
+    def test_zero_means_no_wrapping(self) -> None:
+        """0 与 None 都表示不折行 —— 与 C++ 侧保持同一契约。
+
+        折行统一交给 layout 处理；若渲染层也折一次，两处会各折一遍。
+        """
+        result = render_text("永西叶好冬花", FakeSource("永西叶好冬花"), chars_per_line=0)
+        assert len(result.rows) == 1
+        assert result.char_count == 6
+
+    def test_rejects_negative_chars_per_line(self) -> None:
+        with pytest.raises(ValueError, match="不能为负"):
+            render_text("永", FakeSource("永"), chars_per_line=-1)
 
     def test_jitter_seed_is_reproducible(self) -> None:
         settings = RenderSettings(jitter=0.005, jitter_seed=99)

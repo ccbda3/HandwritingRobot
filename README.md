@@ -20,38 +20,53 @@
 | 风格特征提取 | 可用 |
 | 主动选字（覆盖度驱动） | 可用 |
 | 字形骨架 → 轨迹 → G 代码 | 可用 |
+| 横条本版面（字压横线） | 可用 |
+| Qt 桌面预览工具 | 可用 |
 | SVG 预览 | 可用 |
 | 轨迹数据结构（C++ / Python） | 可用 |
 | 数据集读取与质检 | 可用 |
-| G 代码生成 | 可用（基础版） |
-| Qt 桌面 UI | 骨架 |
+| Qt 桌面 UI | **可用**（参数面板 + 实时预览 + 导出） |
 | 笔迹风格模型 | 未开始 |
 | 运动约束优化（论文核心） | 未开始 |
 
 ## 快速开始
 
-### 1. 先看字能不能写出来（不需要模型，不需要硬件）
+### 1. Qt 预览工具（开发期主力）
+
+```bash
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH="C:/Qt/6.9.3/mingw_64"
+cmake --build build -j
+./build/app/handwriting-studio.exe
+```
+
+左侧改参数、右侧实时出预览。**预览与导出的 G 代码共用同一份版面数据**，
+所以看到的位置就是机器实际走的位置。
+
+默认版面就是**横条本**（150×213 mm / 22 行，字压在横线上），
+字宽默认等于行距、每行字数自动算 —— 正是作业本去掉页边距后的书写区。
+
+> **MinGW 构建注意**：必须静态链接 libstdc++（`app/CMakeLists.txt` 已配置）。
+> Qt 的 mingw_64 包自带一个用较旧 MinGW 编译的 `libstdc++-6.dll`，
+> 运行时会优先加载它，构造 `std::ifstream` 这类触及 `std::locale` 的对象
+> 就会在该 DLL 内崩溃，而且栈回溯只指向 libstdc++，完全看不出是自己的代码问题。
+
+### 2. 命令行
 
 ```bash
 pip install -e ".[dev]"
 
-# 预取字形数据（需要联网，之后可离线使用）
-python -m handwriting.cli preload "永字八法"
+# 预取字形（需要联网，之后可离线使用）
+python -m handwriting.cli preload "春眠不觉晓"
 
-# 生成 G 代码 + SVG 预览
-python -m handwriting.cli render "永字八法" -o yong.nc --svg yong.svg
+# 按横条本排版（默认）
+python -m handwriting.cli render "春眠不觉晓" -o chun.nc --svg chun.svg
 
-# 只看统计
-python -m handwriting.cli render "永字八法" --dry-run
+# 自由版面，导到空白纸
+python -m handwriting.cli render "春眠不觉晓" --mode grid --char-size 20
 ```
 
-字形来自标准笔顺库（[Make Me a Hanzi](https://github.com/skishore/makemeahanzi)
-派生的 hanzi-writer-data），**medians 字段自带正确笔顺**。
-用浏览器打开导出的 SVG 就能看到机器会画成什么样，不必先接上机器。
-
-管线细节、坐标系标定与已知限制见 [docs/glyph-pipeline.md](docs/glyph-pipeline.md)。
-
-### 2. 采集你的笔迹
+### 3. 采集你的笔迹
 
 用浏览器打开 [`capture/index.html`](capture/index.html)，按提示写 150 个汉字，导出 JSON。
 零依赖、可离线，手机 / 平板 / 数位板 / 电脑都能用。
@@ -73,7 +88,7 @@ python -m handwriting.cli render "永字八法" --dry-run
 | 手机触屏 + 电容笔 | 20–50 元 | 60–120 Hz | 无 |
 | 鼠标 | 0 | 60–125 Hz | 无（仅能验证链路） |
 
-### 3. 构建 C++ 核心库
+### 4. 构建 C++ 核心库
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -89,11 +104,11 @@ cmake -S . -B build -DHR_BUILD_APP=OFF
 
 Qt 前端优先使用 Qt6；找不到时自动回退 Qt5.15，便于本地开发机快速构建。
 
-### 4. Python 侧（数据集与训练）
+### 5. Python 侧（数据集与训练）
 
 ```bash
 pip install -e ".[dev]"
-pytest                      # 227 个用例，联网用例默认跳过
+pytest                      # 262 个用例，联网用例默认跳过
 pytest --run-network -m network   # 验证真实字形数据
 ruff check src tests
 ```

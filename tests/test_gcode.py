@@ -75,6 +75,17 @@ class TestSettings:
         assert "M3 S1000" in lines
         assert "G0 Z0" not in lines
 
+    def test_spindle_mode_does_not_emit_duplicate_m5(self) -> None:
+        """抬笔已经是 M5，页脚再写一次会输出两个连续 M5。"""
+        settings = PlotSettings(use_z_axis=False)
+        lines = strokes_to_gcode([[single_char()]], settings).strip().splitlines()
+        for before, after in zip(lines, lines[1:], strict=False):
+            assert not (before == "M5" and after == "M5")
+
+    def test_z_mode_keeps_footer_m5(self) -> None:
+        lines = strokes_to_gcode([[single_char()]]).strip().splitlines()
+        assert lines[-2] == "M5"
+
     def test_custom_feedrate_is_emitted(self) -> None:
         settings = PlotSettings(feed_draw=600.0)
         text = strokes_to_gcode([[single_char()]], settings)

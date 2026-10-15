@@ -119,6 +119,10 @@ int main() {
     const auto spindle_lines = split_lines(strokes_to_gcode({{single_char()}}, spindle));
     HR_CHECK(count_line(spindle_lines, "M3 S1000") == 1);
     HR_CHECK(count_line(spindle_lines, "G0 Z0") == 0);
+    // 抬笔本身是 M5，页脚不应再补一个，否则出现连续两个 M5
+    for (std::size_t i = 0; i + 1 < spindle_lines.size(); ++i) {
+        HR_CHECK(!(spindle_lines[i] == "M5" && spindle_lines[i + 1] == "M5"));
+    }
 
     // ---- 进给速度与小数位 ----
     PlotSettings fast;

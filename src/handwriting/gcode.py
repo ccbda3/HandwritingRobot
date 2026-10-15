@@ -157,7 +157,11 @@ class _Writer:
 
     def finish(self) -> PlotStats:
         self.pen_up()
-        self.lines.extend(self.s.footer)
+        for line in self.s.footer:
+            # 跳过与上一行重复的页脚指令：主轴模式下抬笔本身就是 M5，
+            # 页脚再写一次会输出两个连续的 M5（无害但脏）
+            if not self.lines or self.lines[-1] != line:
+                self.lines.append(line)
         return PlotStats(
             stroke_count=self.stroke_count,
             point_count=self.point_count,

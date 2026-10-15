@@ -121,7 +121,11 @@ void GcodeBuilder::plot_stroke(const Stroke& stroke, double origin_x, double ori
 void GcodeBuilder::finish() {
     pen_up();
     for (const auto& line : settings_.footer) {
-        lines_.push_back(line);
+        // 跳过与上一行重复的页脚指令：主轴模式下抬笔本身就是 M5，
+        // 页脚再写一次会输出两个连续的 M5（无害但脏）
+        if (lines_.empty() || lines_.back() != line) {
+            lines_.push_back(line);
+        }
     }
     stats_.estimated_seconds =
         stats_.draw_length_mm / (settings_.feed_draw / 60.0) +

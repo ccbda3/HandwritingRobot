@@ -123,6 +123,9 @@ python -m handwriting.cli render "春眠不觉晓" -o chun.nc --svg chun.svg
 
 # 自由版面，导到空白纸
 python -m handwriting.cli render "春眠不觉晓" --mode grid --char-size 20
+
+# 体检采集数据（自动识别单字 1.0 / 整行 2.0），打印质量与风格特征
+python -m handwriting.cli inspect capture.json
 ```
 
 ### 3. 采集你的笔迹

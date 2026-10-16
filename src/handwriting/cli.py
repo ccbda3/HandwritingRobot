@@ -17,16 +17,21 @@
 
     # 只看统计，不写文件
     python -m handwriting.cli render "永" --dry-run
+
+    # 体检采集数据并打印风格特征（自动识别单字 1.0 / 整行 2.0）
+    python -m handwriting.cli inspect capture.json
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import sys
 from collections import Counter
 from pathlib import Path
 
+from handwriting.dataset import CaptureData
 from handwriting.gcode import PlotSettings, glyphs_to_gcode_with_stats
 from handwriting.glyph import DEFAULT_CACHE_DIR, HanziWriterSource
 from handwriting.layout import (
@@ -39,15 +44,56 @@ from handwriting.layout import (
     resolve_char_size,
     resolve_chars_per_line,
 )
+from handwriting.line import LineCapture
 from handwriting.preview import SvgStyle, to_svg
 from handwriting.render import RenderSettings, render_text
+from handwriting.style import (
+    LineStyleFeatures,
+    StyleFeatures,
+    extract,
+    mean_features,
+    mean_line_features,
+)
 
 # GRBL @ 115200 baud 的实测吞吐。这是整条链路的真实瓶颈，
 # 计算只占端到端耗时的 0.02%（见 benchmarks/）。
 GRBL_LINES_PER_SECOND = 380.0
 
+# 采集数据格式（与 docs/data-format.md 对应）
+CHAR_FORMAT = "handwriting-capture/1.0"  # 单字
+LINE_FORMAT = "handwriting-capture/2.0"  # 整行
+
 EXIT_OK = 0
 EXIT_ERROR = 1
+
+# 风格特征的中文标签（用于 inspect 输出）
+_CHAR_LABELS = {
+    "aspect_ratio": "字宽高比",
+    "slant_deg": "主倾角(°)",
+    "ink_density": "笔画密度",
+    "straightness": "笔画平直度",
+    "turn_mean_deg": "平均转折角(°)",
+    "corner_deg": "折角(°)",
+    "corner_rate": "折笔密度",
+    "stroke_length_cv": "笔画长短差异",
+    "pressure_mean": "平均压力",
+    "pressure_std": "压力波动",
+    "pressure_taper": "提按(中段−首尾)",
+    "speed_mean": "书写速度",
+    "speed_std": "速度波动",
+    "pause_ratio": "抬笔时间占比",
+}
+_LINE_LABELS = {
+    "char_width_cv": "字宽变异系数",
+    "char_height_cv": "字高变异系数",
+    "char_gap_mean": "平均字距",
+    "char_gap_cv": "字距变异系数",
+    "baseline_drift": "基线漂移",
+    "baseline_slope": "基线趋势(正=下沉)",
+    "char_pause_ratio": "字间停顿占比",
+    "connection_rate": "连笔率",
+    "slant_deg": "整行倾角(°)",
+}
 
 
 def _configure_stdout() -> None:
@@ -120,6 +166,11 @@ def _build_parser() -> argparse.ArgumentParser:
     preload.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     preload.add_argument("--offline", action="store_true", help="只用本地缓存")
 
+    inspect = subparsers.add_parser(
+        "inspect", help="体检采集数据并打印风格特征（单字 1.0 / 整行 2.0 自动识别）"
+    )
+    inspect.add_argument("path", type=Path, help="采集导出的 JSON 文件")
+
     return parser
 
 
@@ -146,6 +197,115 @@ def _cmd_preload(args: argparse.Namespace) -> int:
 
     print("全部成功。")
     return EXIT_OK
+
+
+def _print_problems(problems: list[str]) -> None:
+    if not problems:
+        print("  通过，未发现问题。")
+        return
+    print(f"  发现 {len(problems)} 个问题：")
+    for problem in problems:
+        print(f"    - {problem}")
+
+
+def _print_features(features: StyleFeatures | LineStyleFeatures, labels: dict[str, str]) -> None:
+    for name in features.numeric_fields:
+        value = getattr(features, name)
+        label = labels.get(name, name)
+        print(f"  {label}：—（不可用）" if value is None else f"  {label}：{value:.4f}")
+
+
+def _inspect_chars(capture: CaptureData) -> int:
+    meta = capture.meta
+    print(f"设备    ：{meta.device}")
+    print(f"压感    ：{'支持' if meta.pressure_supported else '不支持'}")
+    print(f"采样率  ：{meta.sampling_hz if meta.sampling_hz else '未知'}")
+    print(f"样本数  ：{capture.char_count} 字")
+    print(f"采样点  ：{capture.total_points}（平均 {capture.average_points_per_char:.0f}/字）")
+
+    print()
+    print("== 质量检查 ==")
+    problems = capture.validate()
+    _print_problems(problems)
+
+    print()
+    print("== 风格特征（全字表平均）==")
+    features = []
+    failed = 0
+    for sample in capture.samples:
+        try:
+            features.append(extract(sample.to_stroke_set(), sample.stroke_start_t))
+        except ValueError:
+            failed += 1
+    if features:
+        _print_features(mean_features(features), _CHAR_LABELS)
+        if failed:
+            print(f"  （{failed} 个样本无法提取特征，已跳过）")
+    else:
+        print("  （没有可用于提取特征的样本）")
+
+    return EXIT_OK if not problems else EXIT_ERROR
+
+
+def _inspect_lines(capture: LineCapture) -> int:
+    meta = capture.meta
+    per_line = capture.total_points / capture.line_count if capture.line_count else 0.0
+    print(f"设备    ：{meta.device}")
+    print(f"压感    ：{'支持' if meta.pressure_supported else '不支持'}")
+    print(f"采样率  ：{meta.sampling_hz if meta.sampling_hz else '未知'}")
+    print(f"行数    ：{capture.line_count}")
+    print(f"总字数  ：{capture.total_chars}")
+    print(f"采样点  ：{capture.total_points}（平均 {per_line:.0f}/行）")
+
+    print()
+    print("== 质量检查 ==")
+    problems = capture.validate()
+    _print_problems(problems)
+
+    print()
+    print("== 行级风格特征（全部行平均）==")
+    features = []
+    failed = 0
+    for line in capture.lines:
+        try:
+            features.append(line.style_features())
+        except ValueError:
+            failed += 1
+    if features:
+        _print_features(mean_line_features(features), _LINE_LABELS)
+        if failed:
+            print(f"  （{failed} 行无法提取特征，已跳过）")
+    else:
+        print("  （没有可用于提取特征的行）")
+
+    return EXIT_OK if not problems else EXIT_ERROR
+
+
+def _cmd_inspect(args: argparse.Namespace) -> int:
+    path: Path = args.path
+    if not path.is_file():
+        print(f"错误：找不到文件 {path}")
+        return EXIT_ERROR
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(f"错误：无法读取或解析 {path}：{error}")
+        return EXIT_ERROR
+
+    fmt = payload.get("format")
+    print("== 采集数据体检 ==")
+    print(f"文件    ：{path}")
+    print(f"格式    ：{fmt}")
+    print()
+
+    if fmt == LINE_FORMAT:
+        return _inspect_lines(LineCapture.from_dict(payload, source=path))
+    if fmt == CHAR_FORMAT:
+        return _inspect_chars(CaptureData.from_dict(payload, source=path))
+
+    print(f"错误：无法识别的数据格式 {fmt!r}（期望 {CHAR_FORMAT} 或 {LINE_FORMAT}）")
+    return EXIT_ERROR
 
 
 def _cmd_render(args: argparse.Namespace) -> int:
@@ -273,6 +433,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_render(args)
     if args.command == "preload":
         return _cmd_preload(args)
+    if args.command == "inspect":
+        return _cmd_inspect(args)
 
     parser.error(f"未知子命令 {args.command!r}")
     return EXIT_ERROR  # pragma: no cover - argparse 会先退出

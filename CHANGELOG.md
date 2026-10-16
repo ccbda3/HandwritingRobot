@@ -7,8 +7,30 @@
 
 ## [未发布]
 
+### 变更
+
+- **界面改为三栏布局**：预览画布居中、独占整片区域，参数面板停靠左侧，
+  机器控制面板停靠右侧。原先是「参数 + 预览」分栏再加**底部一整条**机器面板，
+  底部太高把预览挤扁；现在预览获得完整高度，机器控制成为竖向侧栏，
+  内容套滚动区（不再被裁切），点动「步长 / 进给」改为整行宽度（读数不再被截断）。
+- **自动部署运行时依赖**：`app/CMakeLists.txt` 在 POST_BUILD 阶段把
+  Qt / MinGW 运行时 DLL 与 `platforms`、`imageformats` 插件复制到 exe 目录，
+  生成的 `build/app/handwriting-studio.exe` 可直接双击运行（解决“运行找不到 dll”）。
+
 ### 新增
 
+- **整行采集模式**（`capture/index.html`）：采集器新增「单字 / 整行」切换。
+  整行模式在画布上画出**横线与字格**，用户按横线连续书写整行（可连笔），
+  导出 `handwriting-capture/2.0`；坐标归一化到**整行方框**、`strokeStartT` 以整行起笔为基准，
+  因此能采到单字模式采不到的位置飘逸、字距、行气与连笔潦草。
+- **整行数据模型与分段**（`src/handwriting/line.py`、`src/handwriting/segment.py`）：
+  `LineCapture` 读取 2.0 数据集；`segment_line` 用「抬笔间隔 + 已知字数」
+  自动把整行切成逐字的笔画区间（无需参考字形）；`LineSample.split_chars()`
+  可把整行切成单字样本，一份数据两用。
+- **行级风格特征**（`src/handwriting/style.py` 的 `LineStyleFeatures` / `extract_line`）：
+  从整行数据提取单字给不了的指标 —— 字宽/字高变异系数、字距均值与变异系数、
+  基线漂移与趋势、字间停顿比、连笔率、整行倾角。不可用的指标用 `None` 表示；
+  `LineSample.style_features()` 一步拿到；`mean_line_features` / `distance` 支持跨行比较与聚合。
 - **Qt 桌面预览工具**：左侧参数面板 + 右侧实时预览（改参数 120 ms 防抖后自动重算），
   支持缩放（滚轮，以光标为锚点）、平移（拖拽）、适应窗口、导出 G 代码与预览图。
   按 ADR-0003 直接链接 C++ 核心库，**不启动 Python 子进程**。

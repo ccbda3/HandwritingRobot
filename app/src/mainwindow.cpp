@@ -109,8 +109,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 // ---------------------------------------------------------------------------
 
 void MainWindow::buildUi() {
-    auto* splitter = new QSplitter(Qt::Horizontal, this);
-
     auto* panel = new QWidget;
     auto* panel_layout = new QVBoxLayout(panel);
     panel_layout->setContentsMargins(10, 10, 10, 10);
@@ -239,22 +237,22 @@ void MainWindow::buildUi() {
     auto* scroll = new QScrollArea;
     scroll->setWidget(panel);
     scroll->setWidgetResizable(true);
-    scroll->setMinimumWidth(340);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    // ---- 预览 ----
+    // ---- 左侧停靠：参数面板（可滚动） ----
+    auto* params_dock = new QDockWidget(QStringLiteral("参数"), this);
+    params_dock->setObjectName(QStringLiteral("paramsDock"));
+    params_dock->setWidget(scroll);
+    params_dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::LeftDockWidgetArea, params_dock);
+    params_dock_ = params_dock;
+
+    // ---- 中央：预览画布（主角，独占整片区域，不再被底部面板挤压） ----
     canvas_ = new PreviewCanvas;
     connect(canvas_, &PreviewCanvas::zoomChanged, this, [this](double scale) {
         status_zoom_->setText(QStringLiteral("缩放 %1%").arg(scale * 100.0 / 3.0, 0, 'f', 0));
     });
-
-    splitter->addWidget(scroll);
-    splitter->addWidget(canvas_);
-    splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
-    splitter->setSizes({370, 870});
-
-    setCentralWidget(splitter);
+    setCentralWidget(canvas_);
 
     for (QDoubleSpinBox* box :
          {page_width_, page_height_, char_size_, slant_, jitter_, pressure_amp_, feed_draw_,
@@ -274,15 +272,18 @@ void MainWindow::buildUi() {
             [this](bool on) { canvas_->setShowRules(on); });
     connect(cache_edit_, &QLineEdit::editingFinished, this, &MainWindow::scheduleRefresh);
 
-    // ---- 机器控制面板（底部可折叠） ----
+    // ---- 机器控制面板（右侧停靠，作为竖向侧栏） ----
     auto* dock = new QDockWidget(QStringLiteral("机器控制 · 串口直连"), this);
     dock->setObjectName(QStringLiteral("machineDock"));
     machine_panel_ = new MachinePanel(dock);
     machine_panel_->setProgramProvider([this] { return current_program_; });
     dock->setWidget(machine_panel_);
-    dock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
-    addDockWidget(Qt::BottomDockWidgetArea, dock);
+    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, dock);
     dock_ = dock;
+
+    // 初始停靠宽度：参数窄一点，机器面板留出放网格的空间
+    resizeDocks({params_dock_, dock_}, {330, 440}, Qt::Horizontal);
 }
 
 void MainWindow::buildMenus() {
@@ -323,6 +324,15 @@ void MainWindow::buildMenus() {
     connect(rules_action, &QAction::toggled, show_rules_, &QCheckBox::setChecked);
 
     view_menu->addSeparator();
+    auto* params_action = view_menu->addAction(QStringLiteral("参数面板(&P)"));
+    params_action->setCheckable(true);
+    params_action->setChecked(true);
+    connect(params_action, &QAction::toggled, this, [this](bool on) {
+        if (params_dock_ != nullptr) {
+            params_dock_->setVisible(on);
+        }
+    });
+
     auto* dock_action = view_menu->addAction(QStringLiteral("机器控制面板(&M)"));
     dock_action->setCheckable(true);
     dock_action->setChecked(true);

@@ -22,7 +22,11 @@
 ``curriculum``
     字表元数据与覆盖度驱动的主动选字策略
 ``dataset``
-    读取采集器导出的 JSON 数据集
+    读取采集器导出的 JSON 数据集（单字，``handwriting-capture/1.0``）
+``segment``
+    整行笔迹的「字」分段（抬笔间隔 + 已知字数约束）
+``line``
+    读取整行采集数据集（``handwriting-capture/2.0``）
 ``gcode``
     GRBL G 代码生成
 ``cli``
@@ -64,16 +68,30 @@ from handwriting.layout import (
     resolve_char_size,
     resolve_chars_per_line,
 )
+from handwriting.line import LineCapture, LineSample
 from handwriting.render import RenderResult, RenderSettings, render_text
+from handwriting.segment import DEFAULT_GAP_MS, segment_by_gap, segment_line, stroke_gaps
 from handwriting.stroke import Point, Stroke, StrokeSet
-from handwriting.style import StyleFeatures, distance, extract, mean_features, resample
+from handwriting.style import (
+    LINE_CONNECT_MS,
+    LineStyleFeatures,
+    StyleFeatures,
+    distance,
+    extract,
+    extract_line,
+    mean_features,
+    mean_line_features,
+    resample,
+)
 
 __version__ = "0.4.0"
 
 __all__ = [
     "CHARACTERS",
     "COLD_START_CHARS",
+    "DEFAULT_GAP_MS",
     "EM_SIZE",
+    "LINE_CONNECT_MS",
     "NOTEBOOK_HEIGHT_MM",
     "NOTEBOOK_LINES",
     "NOTEBOOK_WIDTH_MM",
@@ -86,6 +104,9 @@ __all__ = [
     "GlyphNotFoundError",
     "HanziWriterSource",
     "LayoutSettings",
+    "LineCapture",
+    "LineSample",
+    "LineStyleFeatures",
     "Mode",
     "Page",
     "PlotSettings",
@@ -101,9 +122,11 @@ __all__ = [
     "coverage_report",
     "distance",
     "extract",
+    "extract_line",
     "glyphs_to_gcode_with_stats",
     "load_glyphs",
     "mean_features",
+    "mean_line_features",
     "next_char",
     "order_by_coverage",
     "page_size",
@@ -111,5 +134,8 @@ __all__ = [
     "resample",
     "resolve_char_size",
     "resolve_chars_per_line",
+    "segment_by_gap",
+    "segment_line",
+    "stroke_gaps",
     "strokes_to_gcode",
 ]

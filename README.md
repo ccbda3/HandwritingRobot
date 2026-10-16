@@ -83,6 +83,33 @@ cmake --build build -j
 > 运行时会优先加载它，构造 `std::ifstream` 这类触及 `std::locale` 的对象
 > 就会在该 DLL 内崩溃，而且栈回溯只指向 libstdc++，完全看不出是自己的代码问题。
 
+### 1.3 打包与直接运行（无需在系统里装 Qt）
+
+构建完成后，可执行文件位于：
+
+```
+build/app/handwriting-studio.exe
+```
+
+`app/CMakeLists.txt` 已在 **POST_BUILD** 阶段自动把运行所需的 DLL 与插件
+复制到该目录，所以**整个 `build/app/` 文件夹拷到任意没有装 Qt 的 Windows 机器上，
+双击 `handwriting-studio.exe` 就能跑**，不会再报“找不到 xxx.dll”。
+
+自动跟随 exe 一起部署的文件（来自对 PE 导入表的完整闭包分析）：
+
+| 类别 | 文件 |
+| --- | --- |
+| Qt 运行时 | `Qt6Core.dll` `Qt6Gui.dll` `Qt6Widgets.dll` |
+| MinGW 运行时 | `libgcc_s_seh-1.dll` `libstdc++-6.dll` `libwinpthread-1.dll` |
+| 平台插件 | `platforms/qwindows.dll`（普通 GUI 必选）、`platforms/qoffscreen.dll`（无头快照/演示必选） |
+| 图像插件 | `imageformats/qjpeg.dll` `qico.dll` `qgif.dll` `qsvg.dll`（导出 PNG 等需要） |
+
+> **分发要点**：务必把 `build/app/` **整个目录**一起拷走，不要只拷 `handwriting-studio.exe`——
+> 上面这些 DLL 和 `platforms/`、`imageformats/` 子目录必须跟 exe 待在同一目录。
+
+> **连机前驱动**：控制板（CH340 / CP2102 等 USB 转串口芯片）首次插上，Windows 可能没枚举出
+> COM 口。请先安装对应厂家的 **VCP 虚拟串口驱动**，设备管理器里出现 `COMx` 后软件才能连上。
+
 ### 2. 命令行
 
 ```bash
@@ -119,6 +146,18 @@ python -m handwriting.cli render "春眠不觉晓" --mode grid --char-size 20
 | iPad + Apple Pencil | 已有则 0 | 120–240 Hz | 有 |
 | 手机触屏 + 电容笔 | 20–50 元 | 60–120 Hz | 无 |
 | 鼠标 | 0 | 60–125 Hz | 无（仅能验证链路） |
+
+**两种采集模式**（页面左上角切换）：
+
+- **单字**：一个字一格，坐标归一化到字格 —— 用于**笔画骨架 / 单字形态**，
+  按上面的覆盖度顺序写 150 字。
+- **整行**：按横线**连续书写整行**（可连笔），坐标归一化到整行方框、`strokeStartT` 以整行起笔为基准 ——
+  用于**位置飘逸 / 字距 / 行气 / 连笔潦草**，这些是单字采不到的。
+  导出 `handwriting-capture/2.0`；加载时用 `LineSample.segment()`
+  按「抬笔间隔 + 已知字数」自动分段，无需参考字形。
+
+建议两条腿走：**整行写句子**（拿行级风格）+ **单字按字表补覆盖**（拿笔画结构）。
+整行若记录了分段，还能切出单字样本（`split_chars()`），一份数据两用。
 
 ### 4. 构建 C++ 核心库
 

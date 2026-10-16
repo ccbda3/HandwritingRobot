@@ -118,6 +118,14 @@ void BoundsWidget::paintEvent(QPaintEvent* /*event*/) {
 
     const Transform t = computeTransform();
 
+    // 未标定时画个居中的占位提示，避免看起来像一块坏掉的空框。
+    if (!workspace_.valid) {
+        painter.setPen(QColor::fromRgb(kText));
+        painter.drawText(rect(), Qt::AlignCenter,
+                         QStringLiteral("尚未标定工作区\n点「开始标定」记录四个角"));
+        return;
+    }
+
     // ---- 网格 ----
     if (workspace_.valid) {
         painter.setPen(QPen(QColor::fromRgb(kGrid), 1));

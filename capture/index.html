@@ -119,6 +119,17 @@
     opacity:0;transition:opacity .2s;pointer-events:none;z-index:99;
   }
   .toast.show{opacity:1;}
+
+  .modes{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .modes button{border:0;border-radius:0;padding:6px 12px;font-size:12px;background:transparent;color:var(--muted);}
+  .modes button.active{background:var(--accent);color:#fff;}
+  .modes button:hover{background:var(--panel2);}
+  .modes button.active:hover{background:var(--accent);}
+  #lineText{
+    font:inherit;font-size:15px;padding:6px 10px;min-width:180px;
+    border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text);
+  }
+  #lineText:focus{outline:none;border-color:var(--accent);}
   @media (max-width:820px){
     aside{display:none;}
     .target .ch{font-size:32px;}
@@ -130,6 +141,10 @@
 <body>
 <header>
   <span class="brand">笔迹采集器</span>
+  <span class="modes" id="modes">
+    <button id="modeChar" class="active">单字</button>
+    <button id="modeLine">整行</button>
+  </span>
   <span class="badge" id="bProgress">0 / 150</span>
   <span class="badge" id="bPen">输入设备：等待</span>
   <span class="badge" id="bPressure">压感：检测中</span>
@@ -139,7 +154,7 @@
 </header>
 
 <div class="infobar">
-  <div class="target">
+  <div class="target" id="charTarget">
     <span class="lbl">请写这个字</span>
     <span class="ch" id="curChar">永</span>
     <span class="meta">
@@ -147,11 +162,16 @@
       <span class="pill" id="curComplexity">简单</span>
     </span>
   </div>
+  <div class="target" id="lineTarget" style="display:none">
+    <span class="lbl">本行文字</span>
+    <input id="lineText" value="春眠不觉晓" autocomplete="off" spellcheck="false" />
+    <span class="pill" id="lineCount">5 字</span>
+  </div>
   <div class="milestones" id="milestones"></div>
   <span class="stat">笔画 <b id="sStroke">0</b></span>
   <span class="stat">采样点 <b id="sPoint">0</b></span>
   <span class="stat" id="sOutWrap">出格 <b id="sOut">0</b></span>
-  <span class="stat">本字耗时 <b id="sTime">0.0s</b></span>
+  <span class="stat">耗时 <b id="sTime">0.0s</b></span>
 </div>
 
 <main>
@@ -160,9 +180,9 @@
     <div class="hint" id="hint">在白色方格里用笔写，写完点「下一字」</div>
   </div>
   <aside>
-    <h3>采集进度 · 按结构着色</h3>
+    <h3 id="progressTitle">采集进度 · 按结构着色</h3>
     <div class="grid" id="progressGrid"></div>
-    <div class="legend">
+    <div class="legend" id="legend">
       <span><i style="background:var(--s1)"></i>独体</span>
       <span><i style="background:var(--s2)"></i>左右</span>
       <span><i style="background:var(--s3)"></i>上下</span>
@@ -189,12 +209,13 @@
 
 <footer>
   <button id="btnUndo" class="ghost">撤销一笔</button>
-  <button id="btnClear" class="ghost">清空本字</button>
+  <button id="btnClear" class="ghost">清空</button>
   <button id="btnSkip" class="ghost">跳过</button>
   <span class="grow"></span>
   <button id="btnExport">导出 JSON</button>
   <button id="btnCsv" class="ghost">CSV</button>
   <button id="btnNext" class="primary">下一字 ▶</button>
+  <button id="btnLineDone" class="primary" style="display:none">完成本行 ▶</button>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -223,21 +244,33 @@ var MILESTONES = [
 ];
 var MIN_SAMPLING_HZ = 100;
 
+var LINE_BASELINE = 0.80;   // 整行模式：基线位于行方框高度的 80% 处（字压在横线上）
+var LINE_ASPECT = 1.5;      // 行方框高 / 单字宽，保证基线上方容得下一个字格
+
 var pad = document.getElementById("pad");
 var ctx = pad.getContext("2d");
 
 var state = {
+  mode: "char",                 // "char" 单字 | "line" 整行
   index: 0,
-  samples: [],
+  samples: [],                  // 单字模式：已完成样本
+  lines: [],                    // 整行模式：已完成行
   skipped: [],
   strokes: [],
   current: null,
   drawing: false,
   charStartTs: null,
-  cell: {x:0, y:0, size:300},
+  box: {x:0, y:0, w:300, h:300},// 当前书写区：单字为正方形，整行为长方形
   dpr: 1,
   device: { type:"—", pressure:null, rate:0, rateSamples:[] }
 };
+
+function lineTextValue(){
+  var el = document.getElementById("lineText");
+  return (el ? el.value : "").replace(/\s/g, "");
+}
+
+function lineCharCount(){ return Math.max(1, lineTextValue().length); }
 
 function cellAt(i){ return { s:CELLS.charAt(i*2), c:CELLS.charAt(i*2+1) }; }
 
@@ -252,38 +285,66 @@ function toast(msg){
 /* ---------- 布局 ---------- */
 function layout(){
   var stage = pad.parentElement;
-  var availW = stage.clientWidth - 20;
-  var availH = stage.clientHeight - 20;
-  var size = Math.max(160, Math.min(availW, availH));
+  var availW = Math.max(220, stage.clientWidth - 20);
+  var availH = Math.max(160, stage.clientHeight - 20);
+  var w, h;
+
+  if(state.mode === "line"){
+    // 一行 N 个近正方形的字格，整体放进舞台
+    var n = lineCharCount();
+    var charSize = Math.max(26, Math.min(availW / n, availH / LINE_ASPECT));
+    w = Math.round(charSize * n);
+    h = Math.round(charSize * LINE_ASPECT);
+  } else {
+    var s = Math.max(160, Math.min(availW, availH));
+    w = s; h = s;
+  }
 
   state.dpr = window.devicePixelRatio || 1;
-  pad.style.width = size + "px";
-  pad.style.height = size + "px";
-  pad.width = Math.round(size * state.dpr);
-  pad.height = Math.round(size * state.dpr);
+  pad.style.width = w + "px";
+  pad.style.height = h + "px";
+  pad.width = Math.round(w * state.dpr);
+  pad.height = Math.round(h * state.dpr);
   ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
 
-  var m = Math.round(size * 0.06);
-  state.cell = { x:m, y:m, size:size - m*2 };
+  var m = Math.round(Math.min(w, h) * (state.mode === "line" ? 0.04 : 0.06));
+  state.box = { x:m, y:m, w:w - m*2, h:h - m*2 };
   render();
 }
 
 /* ---------- 绘制 ---------- */
 function drawGrid(){
-  var c = state.cell, s = c.size;
+  var b = state.box;
   ctx.save();
-  ctx.strokeStyle = "#dcdcdc";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(c.x + .5, c.y + .5, s - 1, s - 1);
-  ctx.setLineDash([5, 5]);
-  ctx.strokeStyle = "#e6e6e6";
-  ctx.beginPath();
-  ctx.moveTo(c.x + s/2, c.y); ctx.lineTo(c.x + s/2, c.y + s);
-  ctx.moveTo(c.x, c.y + s/2); ctx.lineTo(c.x + s, c.y + s/2);
-  ctx.moveTo(c.x, c.y); ctx.lineTo(c.x + s, c.y + s);
-  ctx.moveTo(c.x + s, c.y); ctx.lineTo(c.x, c.y + s);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  if(state.mode === "line"){
+    var n = lineCharCount();
+    var cs = b.w / n;                       // 单字宽
+    var baseY = b.y + b.h * LINE_BASELINE;  // 基线：字压其上
+    var topY = baseY - cs;                  // 字格顶
+    ctx.strokeStyle = "#e6e6e6"; ctx.lineWidth = 1;
+    ctx.strokeRect(b.x + .5, b.y + .5, b.w - 1, b.h - 1);
+    ctx.setLineDash([5, 5]); ctx.strokeStyle = "#ededed";
+    ctx.beginPath();
+    ctx.moveTo(b.x, topY); ctx.lineTo(b.x + b.w, topY);
+    for(var i=1;i<n;i++){ ctx.moveTo(b.x + i*cs, topY); ctx.lineTo(b.x + i*cs, baseY); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#c4c4c4"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(b.x, baseY + .5); ctx.lineTo(b.x + b.w, baseY + .5); ctx.stroke();
+  } else {
+    ctx.strokeStyle = "#dcdcdc";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(b.x + .5, b.y + .5, b.w - 1, b.h - 1);
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = "#e6e6e6";
+    ctx.beginPath();
+    ctx.moveTo(b.x + b.w/2, b.y); ctx.lineTo(b.x + b.w/2, b.y + b.h);
+    ctx.moveTo(b.x, b.y + b.h/2); ctx.lineTo(b.x + b.w, b.y + b.h/2);
+    ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h);
+    ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.restore();
 }
 
@@ -296,7 +357,7 @@ function strokeWidth(p){
 }
 
 function drawStroke(st){
-  var pts = st.points, c = state.cell;
+  var pts = st.points, bx = state.box;
   if(!pts.length) return;
   ctx.strokeStyle = "#141414";
   ctx.fillStyle = "#141414";
@@ -304,16 +365,16 @@ function drawStroke(st){
   ctx.lineJoin = "round";
   if(pts.length === 1){
     ctx.beginPath();
-    ctx.arc(c.x + pts[0].x*c.size, c.y + pts[0].y*c.size, strokeWidth(pts[0].p)/2, 0, Math.PI*2);
+    ctx.arc(bx.x + pts[0].x*bx.w, bx.y + pts[0].y*bx.h, strokeWidth(pts[0].p)/2, 0, Math.PI*2);
     ctx.fill();
     return;
   }
   for(var i=1;i<pts.length;i++){
-    var a = pts[i-1], b = pts[i];
+    var a = pts[i-1], q = pts[i];
     ctx.beginPath();
-    ctx.lineWidth = strokeWidth((a.p + b.p) / 2);
-    ctx.moveTo(c.x + a.x*c.size, c.y + a.y*c.size);
-    ctx.lineTo(c.x + b.x*c.size, c.y + b.y*c.size);
+    ctx.lineWidth = strokeWidth((a.p + q.p) / 2);
+    ctx.moveTo(bx.x + a.x*bx.w, bx.y + a.y*bx.h);
+    ctx.lineTo(bx.x + q.x*bx.w, bx.y + q.y*bx.h);
     ctx.stroke();
   }
 }
@@ -321,10 +382,10 @@ function drawStroke(st){
 function render(){
   ctx.clearRect(0, 0, pad.width / state.dpr, pad.height / state.dpr);
   drawGrid();
-  var c = state.cell;
+  var c = state.box;
   ctx.save();
   ctx.beginPath();
-  ctx.rect(c.x, c.y, c.size, c.size);
+  ctx.rect(c.x, c.y, c.w, c.h);
   ctx.clip();
   for(var i=0;i<state.strokes.length;i++) drawStroke(state.strokes[i]);
   if(state.current) drawStroke(state.current);
@@ -335,10 +396,10 @@ function render(){
 /* ---------- 指针事件 ---------- */
 function toLocal(e){
   var r = pad.getBoundingClientRect();
-  var c = state.cell;
+  var c = state.box;
   return {
-    x:(e.clientX - r.left - c.x) / c.size,
-    y:(e.clientY - r.top  - c.y) / c.size,
+    x:(e.clientX - r.left - c.x) / c.w,
+    y:(e.clientY - r.top  - c.y) / c.h,
     p:(typeof e.pressure === "number") ? e.pressure : 0.5,
     t:e.timeStamp
   };
@@ -508,46 +569,55 @@ function renderMilestones(){
 }
 
 function refreshProgress(){
-  var done = state.samples.length;
-  document.getElementById("bProgress").textContent = done + " / " + ORDER.length;
+  var isLine = state.mode === "line";
+  var items = isLine ? state.lines : state.samples;
+  var done = items.length;
+
+  document.getElementById("bProgress").textContent = isLine
+    ? (done + " 行") : (done + " / " + ORDER.length);
   document.getElementById("sDone").textContent = done;
 
   var total = 0;
-  for(var i=0;i<state.samples.length;i++){
-    for(var j=0;j<state.samples[i].strokes.length;j++){
-      total += state.samples[i].strokes[j].length;
-    }
+  for(var i=0;i<items.length;i++){
+    for(var j=0;j<items[i].strokes.length;j++){ total += items[i].strokes[j].length; }
   }
   document.getElementById("sTotalPoint").textContent = total;
   document.getElementById("sAvgPoint").textContent = done ? Math.round(total/done) : 0;
 
-  var rates = state.samples.map(function(s){ return s.rate; }).filter(function(v){ return v > 0; });
+  var rates = items.map(function(s){ return s.rate; }).filter(function(v){ return v > 0; });
   var avg = rates.length ? Math.round(rates.reduce(function(a,b){ return a+b; },0)/rates.length) : 0;
   document.getElementById("sAvgRate").textContent = avg ? avg + " Hz" : "—";
 
+  // 进度网格 / 里程碑只在单字模式有意义
   var g = document.getElementById("progressGrid");
-  g.innerHTML = "";
-  var doneSet = {};
-  state.samples.forEach(function(s){ doneSet[s.index] = true; });
-  var skipSet = {};
-  state.skipped.forEach(function(i){ skipSet[i] = true; });
+  document.getElementById("progressTitle").style.display = isLine ? "none" : "";
+  g.style.display = isLine ? "none" : "";
+  document.getElementById("legend").style.display = isLine ? "none" : "";
 
-  for(var k=0;k<ORDER.length;k++){
-    var cellEl = document.createElement("i");
-    var cell = cellAt(k);
-    if(doneSet[k]) cellEl.className = "done s" + cell.s;
-    else if(skipSet[k]) cellEl.className = "skip";
-    if(k === state.index) cellEl.className += " cur";
-    cellEl.title = ORDER.charAt(k) + " · " + STRUCTURES[cell.s] + " · " + COMPLEXITIES[cell.c];
-    g.appendChild(cellEl);
+  if(!isLine){
+    g.innerHTML = "";
+    var doneSet = {};
+    state.samples.forEach(function(s){ doneSet[s.index] = true; });
+    var skipSet = {};
+    state.skipped.forEach(function(i){ skipSet[i] = true; });
+
+    for(var k=0;k<ORDER.length;k++){
+      var cellEl = document.createElement("i");
+      var cell = cellAt(k);
+      if(doneSet[k]) cellEl.className = "done s" + cell.s;
+      else if(skipSet[k]) cellEl.className = "skip";
+      if(k === state.index) cellEl.className += " cur";
+      cellEl.title = ORDER.charAt(k) + " · " + STRUCTURES[cell.s] + " · " + COMPLEXITIES[cell.c];
+      g.appendChild(cellEl);
+    }
+
+    var cell = cellAt(state.index);
+    document.getElementById("curChar").textContent = ORDER.charAt(state.index) || "—";
+    document.getElementById("curStructure").textContent = STRUCTURES[cell.s] || "";
+    document.getElementById("curComplexity").textContent = COMPLEXITIES[cell.c] || "";
+    renderMilestones();
   }
 
-  var cell = cellAt(state.index);
-  document.getElementById("curChar").textContent = ORDER.charAt(state.index) || "—";
-  document.getElementById("curStructure").textContent = STRUCTURES[cell.s] || "";
-  document.getElementById("curComplexity").textContent = COMPLEXITIES[cell.c] || "";
-
-  renderMilestones();
   renderIssues();
 }
 
@@ -571,6 +641,8 @@ function advance(){
 }
 
 function commit(skipped){
+  if(state.mode === "line"){ commitLine(); return; }
+
   var total = 0;
   for(var i=0;i<state.strokes.length;i++) total += state.strokes[i].points.length;
 
@@ -599,7 +671,62 @@ function commit(skipped){
   }
 }
 
+/* ---------- 整行模式：提交一行 ---------- */
+function commitLine(){
+  var text = lineTextValue();
+  if(!text){ toast("请先输入这一行的文字"); return; }
+
+  var total = 0;
+  for(var i=0;i<state.strokes.length;i++) total += state.strokes[i].points.length;
+  if(total === 0){ toast("这一行还没有内容"); return; }
+
+  state.lines.push({
+    index: state.lines.length,
+    text: text,
+    strokes: state.strokes.map(function(s){ return s.points; }),
+    strokeStartT: state.strokes.map(function(s){ return s.startT; }),
+    rate: Math.round(state.device.rate) || 0,
+    pressure: state.device.pressure === true
+  });
+  document.getElementById("bSaved").textContent = "未备份";
+  document.getElementById("bSaved").className = "badge warn";
+  toast("已记录第 " + state.lines.length + " 行：" + text + "（" + state.strokes.length + " 笔）");
+
+  clearCurrent();
+  refreshProgress();
+  if(state.lines.length % 10 === 0){
+    toast("已写 " + state.lines.length + " 行，建议导出一份备份");
+  }
+}
+
 function buildPayload(){
+  if(state.mode === "line"){
+    return {
+      format: "handwriting-capture/2.0",
+      meta: {
+        device: state.device.type,
+        pressureSupported: state.device.pressure === true,
+        samplingHz: Math.round(state.device.rate) || null,
+        lineCount: state.lines.length,
+        coordSystem: "归一化到整行方框，原点在方框左上角，x 向右，y 向下，取值 0~1",
+        baselineRatio: LINE_BASELINE,
+        createdAt: new Date().toISOString()
+      },
+      lines: state.lines.map(function(l){
+        return {
+          index: l.index,
+          text: l.text,
+          strokeCount: l.strokes.length,
+          rate: l.rate,
+          pressure: l.pressure,
+          strokes: l.strokes.map(function(pts){
+            return pts.map(function(p){ return [+p.x.toFixed(5), +p.y.toFixed(5), +p.p.toFixed(4), p.t]; });
+          }),
+          strokeStartT: l.strokeStartT
+        };
+      })
+    };
+  }
   return {
     format: "handwriting-capture/1.0",
     meta: {
@@ -607,7 +734,7 @@ function buildPayload(){
       pressureSupported: state.device.pressure === true,
       samplingHz: Math.round(state.device.rate) || null,
       charCount: ORDER.length,
-      cellPx: Math.round(state.cell.size),
+      cellPx: Math.round(state.box.h),
       devicePixelRatio: state.dpr,
       coordSystem: "归一化到方格，原点在方格左上角，x 向右，y 向下，取值 0~1",
       orderStrategy: "structure×complexity 覆盖度轮转贪心（scripts/build_curriculum.py）",
@@ -645,14 +772,30 @@ function stamp(){
 }
 
 function exportJSON(){
-  if(!state.samples.length){ toast("还没有采集到数据"); return; }
+  var n = state.mode === "line" ? state.lines.length : state.samples.length;
+  if(!n){ toast("还没有采集到数据"); return; }
   download("handwriting-" + stamp() + ".json", JSON.stringify(buildPayload(), null, 1), "application/json");
   document.getElementById("bSaved").textContent = "已备份";
   document.getElementById("bSaved").className = "badge ok";
-  toast("已导出 " + state.samples.length + " 个字");
+  toast("已导出 " + n + (state.mode === "line" ? " 行" : " 个字"));
 }
 
 function exportCSV(){
+  if(state.mode === "line"){
+    if(!state.lines.length){ toast("还没有采集到数据"); return; }
+    var lrows = ["line_index,text,stroke_id,point_id,x,y,pressure,t_ms,stroke_start_ms"];
+    state.lines.forEach(function(l){
+      l.strokes.forEach(function(pts, sti){
+        pts.forEach(function(p, pi){
+          lrows.push([l.index, '"' + l.text + '"', sti, pi, p.x.toFixed(5), p.y.toFixed(5),
+                      p.p.toFixed(4), p.t, l.strokeStartT[sti]].join(","));
+        });
+      });
+    });
+    download("handwriting-" + stamp() + ".csv", lrows.join("\n"), "text/csv");
+    toast("已导出 CSV");
+    return;
+  }
   if(!state.samples.length){ toast("还没有采集到数据"); return; }
   var rows = ["sample_index,char,stroke_id,point_id,x,y,pressure,t_ms,stroke_start_ms"];
   state.samples.forEach(function(s){
@@ -667,15 +810,51 @@ function exportCSV(){
   toast("已导出 CSV");
 }
 
+/* ---------- 模式切换 ---------- */
+function setMode(m){
+  state.mode = m;
+  state.strokes = []; state.current = null; state.charStartTs = null;
+
+  document.getElementById("modeChar").className = m === "char" ? "active" : "";
+  document.getElementById("modeLine").className = m === "line" ? "active" : "";
+  document.getElementById("charTarget").style.display = m === "char" ? "" : "none";
+  document.getElementById("lineTarget").style.display = m === "line" ? "" : "none";
+  document.getElementById("milestones").style.display = m === "char" ? "" : "none";
+  document.getElementById("btnSkip").style.display = m === "char" ? "" : "none";
+  document.getElementById("btnNext").style.display = m === "char" ? "" : "none";
+  document.getElementById("btnLineDone").style.display = m === "line" ? "" : "none";
+  document.getElementById("hint").textContent = m === "line"
+    ? "按横线写整行，可连笔；写完点「完成本行」"
+    : "在白色方格里用笔写，写完点「下一字」";
+
+  document.getElementById("lineCount").textContent = lineTextValue().length + " 字";
+  layout();
+  refreshProgress();
+}
+
 /* ---------- 绑定 ---------- */
 document.getElementById("btnUndo").onclick = undo;
 document.getElementById("btnClear").onclick = clearCurrent;
 document.getElementById("btnSkip").onclick = function(){ commit(true); };
 document.getElementById("btnNext").onclick = function(){ commit(false); };
+document.getElementById("btnLineDone").onclick = commitLine;
 document.getElementById("btnExport").onclick = exportJSON;
 document.getElementById("btnCsv").onclick = exportCSV;
 
+document.getElementById("modeChar").onclick = function(){ setMode("char"); };
+document.getElementById("modeLine").onclick = function(){ setMode("line"); };
+
+var lineInput = document.getElementById("lineText");
+lineInput.oninput = function(){
+  document.getElementById("lineCount").textContent = lineTextValue().length + " 字";
+  layout();
+};
+lineInput.onkeydown = function(e){
+  if(e.key === "Enter"){ e.preventDefault(); commitLine(); }
+};
+
 document.addEventListener("keydown", function(e){
+  if(e.target && e.target.tagName === "INPUT") return;
   if((e.ctrlKey || e.metaKey) && e.key === "z"){ e.preventDefault(); undo(); }
   else if(e.key === " "){ e.preventDefault(); commit(false); }
   else if(e.key === "Escape"){ clearCurrent(); }
@@ -684,9 +863,9 @@ document.addEventListener("keydown", function(e){
 window.addEventListener("resize", layout);
 window.addEventListener("orientationchange", function(){ setTimeout(layout, 200); });
 
-refreshProgress();
-layout();
+setMode("char");
 setTimeout(function(){
+  if(state.mode !== "char") return;
   var hint = document.getElementById("hint");
   hint.textContent = "前 8 个字覆盖 8 类结构，写完即可做风格推断";
   setTimeout(function(){ hint.style.display = "none"; }, 8000);

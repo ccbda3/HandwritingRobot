@@ -119,5 +119,6 @@ private:
 
     MachinePanel* machine_panel_{nullptr};
     QDockWidget* dock_{nullptr};
+    QDockWidget* params_dock_{nullptr};
     std::string current_program_;
 };

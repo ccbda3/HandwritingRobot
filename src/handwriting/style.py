@@ -41,6 +41,31 @@ _EPS = 1e-12
 # 算出的转折角毫无意义，必须丢弃而不是当作一个「尖角」。
 _MIN_SEGMENT = 1e-6
 
+# 行级特征：相邻笔画的时间间隔低于该毫秒数即视为「没抬笔」，算作连笔。
+LINE_CONNECT_MS = 15
+
+
+def _mean(values: Sequence[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _std(values: Sequence[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = _mean(values)
+    return math.sqrt(sum((v - mean) ** 2 for v in values) / len(values))
+
+
+def _cv(values: Sequence[float]) -> float | None:
+    """变异系数（标准差 / 均值）。样本不足或均值近零时返回 ``None``（不可用）。"""
+    if len(values) < 2:
+        return None
+    mean = _mean(values)
+    if abs(mean) <= _EPS:
+        return None
+    return _std(values) / mean
+
+
 # 各特征的归一化尺度，用于把不同量纲的特征放进同一个距离度量。
 # 数值为「一个典型书写者之间的差异量」，**属于初始估计，需用真实数据标定**。
 _SCALE: dict[str, float] = {
@@ -58,6 +83,15 @@ _SCALE: dict[str, float] = {
     "speed_mean": 0.5,
     "speed_std": 0.3,
     "pause_ratio": 0.15,
+    # —— 行级（LineStyleFeatures）——
+    "char_width_cv": 0.15,
+    "char_height_cv": 0.15,
+    "char_gap_mean": 0.10,
+    "char_gap_cv": 0.40,
+    "baseline_drift": 0.03,
+    "baseline_slope": 0.01,
+    "char_pause_ratio": 0.15,
+    "connection_rate": 0.20,
 }
 
 
@@ -108,6 +142,54 @@ class StyleFeatures:
 
     def availability(self) -> tuple[bool, ...]:
         """与 :meth:`to_vector` 等长的可用性掩码，避免把「无压感」误当成「压力为 0」。"""
+        return tuple(getattr(self, name) is not None for name in self.numeric_fields)
+
+
+@dataclass(frozen=True, slots=True)
+class LineStyleFeatures:
+    """一整行（连续书写）的风格特征。
+
+    这些是**单字样本给不了**的信息：字与字之间的大小抖动、间距、基线漂移、
+    字间停顿与连笔倾向。只有整行采集（``handwriting-capture/2.0``）才具备。
+
+    与 :class:`StyleFeatures` 一样：不可用的特征用 ``None`` 表示（而不是 0），
+    因此 ``to_vector`` 必须配合 ``availability`` 使用。多数指标需要 ≥ 2 个字
+    （或 ≥ 2 笔）才有定义，短行会得到 ``None``。
+    """
+
+    char_count: int
+
+    char_width_cv: float | None
+    """字宽变异系数。越大说明字越大小不一（工整的人接近 0）。"""
+    char_height_cv: float | None
+    """字高变异系数。"""
+    char_gap_mean: float | None
+    """平均字距（归一化单位）。"""
+    char_gap_cv: float | None
+    """字距变异系数。越大说明间距越忽宽忽窄。"""
+    baseline_drift: float | None
+    """基线漂移：各字底线 y 的标准差。越大说明整行上下起伏越厉害。"""
+    baseline_slope: float | None
+    """基线趋势：字底线 y 对字序的线性斜率。正值表示整行向下漂。"""
+    char_pause_ratio: float | None
+    """字间停顿之和 / 整行时长。越大说明字与字之间停得越久。"""
+    connection_rate: float | None
+    """连笔率：相邻笔画时间间隔 ≤ ``LINE_CONNECT_MS``（没抬笔）的比例。"""
+    slant_deg: float
+    """整行主倾角，右倾为正。"""
+
+    @property
+    def numeric_fields(self) -> tuple[str, ...]:
+        return tuple(f.name for f in fields(self) if f.name != "char_count")
+
+    def to_vector(self) -> tuple[float, ...]:
+        """展开为定长向量，``None`` 以 0 填充。配合 :meth:`availability` 使用。"""
+        return tuple(
+            0.0 if (v := getattr(self, name)) is None else float(v) for name in self.numeric_fields
+        )
+
+    def availability(self) -> tuple[bool, ...]:
+        """与 :meth:`to_vector` 等长的可用性掩码。"""
         return tuple(getattr(self, name) is not None for name in self.numeric_fields)
 
 
@@ -326,8 +408,11 @@ def mean_features(items: Iterable[StyleFeatures]) -> StyleFeatures:
     )
 
 
-def distance(a: StyleFeatures, b: StyleFeatures) -> float:
+def distance(a: StyleFeatures | LineStyleFeatures, b: StyleFeatures | LineStyleFeatures) -> float:
     """两个风格向量之间的归一化欧氏距离。
+
+    ``a`` 与 ``b`` 必须是**同一种**特征（都是 :class:`StyleFeatures`，
+    或都是 :class:`LineStyleFeatures`），否则逐字段比较没有意义。
 
     只比较双方都可用（非 ``None``）的特征，避免把「无压感」当成「压力为 0」。
     返回值 0 表示完全一致，约 1.0 表示各特征平均相差一个典型书写者差异。
@@ -342,3 +427,126 @@ def distance(a: StyleFeatures, b: StyleFeatures) -> float:
         total += ((va - vb) / _SCALE[name]) ** 2
         counted += 1
     return math.sqrt(total / counted) if counted else 0.0
+
+
+def _char_boxes(
+    strokes: Sequence[Stroke], char_ranges: Sequence[tuple[int, int]]
+) -> list[tuple[float, float, float, float]]:
+    """每个字的包围盒 ``(min_x, min_y, max_x, max_y)``。"""
+    boxes: list[tuple[float, float, float, float]] = []
+    for start, end in char_ranges:
+        xs: list[float] = []
+        ys: list[float] = []
+        for stroke in strokes[start:end]:
+            for point in stroke.points:
+                xs.append(point.x)
+                ys.append(point.y)
+        if not xs:
+            raise ValueError(f"字符区间 [{start}, {end}) 内没有采样点")
+        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxes
+
+
+def _slope(values: Sequence[float]) -> float | None:
+    """``values`` 对序号 ``0..n-1`` 的线性回归斜率。样本不足时返回 ``None``。"""
+    n = len(values)
+    if n < 2:
+        return None
+    xs = list(range(n))
+    mean_x = _mean(xs)
+    mean_y = _mean(values)
+    denom = sum((x - mean_x) ** 2 for x in xs)
+    if denom <= _EPS:
+        return None
+    return sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, values, strict=True)) / denom
+
+
+def extract_line(
+    strokes: Sequence[Stroke],
+    char_ranges: Sequence[tuple[int, int]],
+    stroke_start_t: Sequence[int],
+    resample_step: float = DEFAULT_RESAMPLE_STEP,
+) -> LineStyleFeatures:
+    """提取一整行的风格特征。
+
+    ``char_ranges`` 为每个字占用的笔画区间（见 :mod:`handwriting.segment`），
+    ``stroke_start_t`` 为每笔相对**整行起笔**的毫秒数（与 ``strokes`` 等长）。
+    """
+    if not strokes:
+        raise ValueError("空整行无法提取特征")
+    if len(strokes) != len(stroke_start_t):
+        raise ValueError("strokes 与 stroke_start_t 长度不一致")
+    if not char_ranges:
+        raise ValueError("缺少 char_ranges，无法提取行级特征")
+
+    boxes = _char_boxes(strokes, char_ranges)
+    widths = [box[2] - box[0] for box in boxes]
+    heights = [box[3] - box[1] for box in boxes]
+    lefts = [box[0] for box in boxes]
+    rights = [box[2] for box in boxes]
+    bottoms = [box[3] for box in boxes]  # y 向下，字底线 = 最大 y
+
+    gaps = [lefts[i + 1] - rights[i] for i in range(len(boxes) - 1)]
+
+    # 字间停顿：第 i 字收笔时刻 → 第 i+1 字起笔时刻
+    spans = [
+        (stroke_start_t[start], stroke_start_t[end - 1] + strokes[end - 1].duration_ms)
+        for start, end in char_ranges
+    ]
+    pauses = [max(0.0, spans[i + 1][0] - spans[i][1]) for i in range(len(spans) - 1)]
+    span_total = spans[-1][1] - spans[0][0]
+    # 只有一个字时不存在「字间」停顿，该指标不可用
+    char_pause_ratio = (sum(pauses) / span_total) if (pauses and span_total > 0) else None
+
+    # 连笔率：相邻笔画之间「没抬笔」的比例
+    transitions = len(strokes) - 1
+    connection_rate: float | None
+    if transitions > 0:
+        connected = 0
+        for i in range(transitions):
+            end_i = stroke_start_t[i] + strokes[i].duration_ms
+            if stroke_start_t[i + 1] - end_i <= LINE_CONNECT_MS:
+                connected += 1
+        connection_rate = connected / transitions
+    else:
+        connection_rate = None
+
+    resampled = [resample(stroke, resample_step) for stroke in strokes]
+
+    return LineStyleFeatures(
+        char_count=len(char_ranges),
+        char_width_cv=_cv(widths),
+        char_height_cv=_cv(heights),
+        char_gap_mean=(_mean(gaps) if gaps else None),
+        char_gap_cv=_cv(gaps),
+        baseline_drift=(_std(bottoms) if len(bottoms) >= 2 else None),
+        baseline_slope=_slope(bottoms),
+        char_pause_ratio=char_pause_ratio,
+        connection_rate=connection_rate,
+        slant_deg=_slant_deg(resampled),
+    )
+
+
+def mean_line_features(items: Iterable[LineStyleFeatures]) -> LineStyleFeatures:
+    """对多行求平均，得到书写者的整体行级风格。
+
+    可用性取交集：只要有一行缺某个特征，结果就不给该特征，
+    避免用部分行的均值冒充整体风格。
+    """
+    collected = list(items)
+    if not collected:
+        raise ValueError("至少需要一个样本")
+
+    names = collected[0].numeric_fields
+    averaged: dict[str, float | None] = {}
+    for name in names:
+        values = [getattr(item, name) for item in collected]
+        if any(value is None for value in values):
+            averaged[name] = None
+        else:
+            averaged[name] = sum(values) / len(values)  # type: ignore[arg-type]
+
+    return LineStyleFeatures(
+        char_count=round(sum(item.char_count for item in collected) / len(collected)),
+        **averaged,  # type: ignore[arg-type]
+    )

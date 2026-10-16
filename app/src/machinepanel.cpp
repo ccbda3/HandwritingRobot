@@ -11,6 +11,8 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QSizePolicy>
 #include <QStringList>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -81,62 +83,69 @@ MachinePanel::~MachinePanel() {
 // ---------------------------------------------------------------------------
 
 void MachinePanel::buildUi() {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(8, 6, 8, 6);
-    root->setSpacing(6);
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    // ---- 第一行：连接 ----
-    auto* connection = new QHBoxLayout;
-    connection->addWidget(new QLabel(QStringLiteral("串口")));
+    auto* content = new QWidget;
+    content->setMinimumWidth(340);
+    auto* root = new QVBoxLayout(content);
+    root->setContentsMargins(10, 8, 10, 8);
+    root->setSpacing(8);
+
+    // ---- 连接 ----
+    auto* conn_grid = new QGridLayout;
+    conn_grid->setSpacing(6);
+    conn_grid->addWidget(new QLabel(QStringLiteral("串口")), 0, 0);
 
     port_combo_ = new QComboBox;
-    port_combo_->setMinimumWidth(220);
-    connection->addWidget(port_combo_);
+    port_combo_->setMinimumWidth(120);
+    conn_grid->addWidget(port_combo_, 0, 1);
 
     refresh_button_ = new QPushButton(QStringLiteral("刷新"));
     connect(refresh_button_, &QPushButton::clicked, this, &MachinePanel::refreshPorts);
-    connection->addWidget(refresh_button_);
+    conn_grid->addWidget(refresh_button_, 0, 2);
 
-    connection->addWidget(new QLabel(QStringLiteral("波特率")));
+    conn_grid->addWidget(new QLabel(QStringLiteral("波特率")), 1, 0);
     baud_combo_ = new QComboBox;
     for (const int rate : handwriting::serial::kBaudRates) {
         baud_combo_->addItem(QString::number(rate), rate);
     }
-    connection->addWidget(baud_combo_);
+    conn_grid->addWidget(baud_combo_, 1, 1);
 
     connect_button_ = new QPushButton(QStringLiteral("连接"));
-    connect_button_->setMinimumWidth(90);
+    connect_button_->setMinimumWidth(80);
     connect(connect_button_, &QPushButton::clicked, this, &MachinePanel::toggleConnection);
-    connection->addWidget(connect_button_);
+    conn_grid->addWidget(connect_button_, 1, 2);
 
     connection_label_ = new QLabel(QStringLiteral("未连接"));
-    connection->addWidget(connection_label_);
-    connection->addStretch();
-    root->addLayout(connection);
+    conn_grid->addWidget(connection_label_, 1, 3);
+    conn_grid->setColumnStretch(1, 1);
+    root->addLayout(conn_grid);
 
-    // ---- 第二行：状态 ----
-    auto* status_row = new QHBoxLayout;
+    // ---- 状态 ----
+    auto* status_col = new QVBoxLayout;
+    status_col->setSpacing(2);
     state_label_ = new QLabel(QStringLiteral("状态 —"));
     position_label_ = new QLabel(QStringLiteral("位置 —"));
     limits_label_ = new QLabel(QStringLiteral("行程 未知"));
     for (QLabel* label : {state_label_, position_label_, limits_label_}) {
-        label->setMinimumWidth(180);
-        status_row->addWidget(label);
+        status_col->addWidget(label);
     }
-    status_row->addStretch();
-    root->addLayout(status_row);
+    root->addLayout(status_col);
 
     // ---- 工作区标定（软限位） ----
     // 步进机没有位置反馈，上电后手推机头到物理角落、再通电点动记录四角，
     // 标定出"设备能走到哪里"。之后所有运动都对照这个矩形做越界检查，
     // 机头就不会冲到机械端点扯断传动皮带。
     auto* bounds_box = new QGroupBox(QStringLiteral("工作区标定（软限位）"));
-    auto* bounds_layout = new QHBoxLayout(bounds_box);
-    bounds_layout->setSpacing(10);
+    auto* bounds_layout = new QVBoxLayout(bounds_box);
+    bounds_layout->setSpacing(8);
 
     bounds_widget_ = new BoundsWidget;
-    bounds_widget_->setMinimumSize(220, 160);
-    bounds_layout->addWidget(bounds_widget_, 0);
+    bounds_widget_->setMinimumHeight(200);
+    bounds_widget_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    bounds_layout->addWidget(bounds_widget_, 1);
 
     auto* bounds_right = new QVBoxLayout;
     bounds_right->setSpacing(4);
@@ -150,13 +159,15 @@ void MachinePanel::buildUi() {
     connect(soft_limit_, &QCheckBox::toggled, this, &MachinePanel::onSoftLimitToggled);
     bounds_right->addWidget(soft_limit_);
 
+    auto* calibrate_row = new QHBoxLayout;
     calibrate_button_ = new QPushButton(QStringLiteral("开始标定"));
     connect(calibrate_button_, &QPushButton::clicked, this, &MachinePanel::onStartCalibrate);
-    bounds_right->addWidget(calibrate_button_);
-
+    calibrate_row->addWidget(calibrate_button_);
     clear_bounds_button_ = new QPushButton(QStringLiteral("清除边界"));
     connect(clear_bounds_button_, &QPushButton::clicked, this, &MachinePanel::onClearBounds);
-    bounds_right->addWidget(clear_bounds_button_);
+    calibrate_row->addWidget(clear_bounds_button_);
+    calibrate_row->addStretch(1);
+    bounds_right->addLayout(calibrate_row);
 
     // 标定向导（平时隐藏，点「开始标定」后出现）
     calibrate_wizard_ = new QGroupBox(QStringLiteral("标定向导"));
@@ -184,12 +195,12 @@ void MachinePanel::buildUi() {
     bounds_right->addWidget(calibrate_wizard_);
 
     bounds_right->addStretch(1);
-    bounds_layout->addLayout(bounds_right, 1);
+    bounds_layout->addLayout(bounds_right);
 
     root->addWidget(bounds_box);
 
-    // ---- 第三行：手动控制 + 程序控制 ----
-    auto* columns = new QHBoxLayout;
+    // ---- 手动控制 + 程序控制（竖向堆叠，各占整栏宽度） ----
+    auto* columns = new QVBoxLayout;
     columns->setSpacing(10);
 
     auto* manual = new QGroupBox(QStringLiteral("手动控制"));
@@ -222,14 +233,15 @@ void MachinePanel::buildUi() {
     jog_step_->setRange(0.1, 100.0);
     jog_step_->setValue(1.0);
     jog_step_->setSuffix(QStringLiteral(" mm"));
-    manual_grid->addWidget(jog_step_, 2, 1);
+    manual_grid->addWidget(jog_step_, 2, 1, 1, 3);
 
-    manual_grid->addWidget(new QLabel(QStringLiteral("进给")), 2, 2);
+    manual_grid->addWidget(new QLabel(QStringLiteral("进给")), 3, 0);
     jog_feed_ = new QDoubleSpinBox;
     jog_feed_->setRange(10.0, 12000.0);
     jog_feed_->setValue(1000.0);
+    jog_feed_->setDecimals(0);
     jog_feed_->setSuffix(QStringLiteral(" mm/min"));
-    manual_grid->addWidget(jog_feed_, 2, 3);
+    manual_grid->addWidget(jog_feed_, 3, 1, 1, 3);
 
     const auto add_jog = [this, manual_grid](const QString& text, double dx, double dy, double dz,
                                              int row, int column) {
@@ -238,14 +250,14 @@ void MachinePanel::buildUi() {
                 [this, dx, dy, dz] { jog(dx, dy, dz); });
         manual_grid->addWidget(button, row, column);
     };
-    add_jog(QStringLiteral("X−"), -1, 0, 0, 3, 0);
-    add_jog(QStringLiteral("X+"), 1, 0, 0, 3, 1);
-    add_jog(QStringLiteral("Y−"), 0, -1, 0, 3, 2);
-    add_jog(QStringLiteral("Y+"), 0, 1, 0, 3, 3);
-    add_jog(QStringLiteral("Z−"), 0, 0, -1, 4, 0);
-    add_jog(QStringLiteral("Z+"), 0, 0, 1, 4, 1);
+    add_jog(QStringLiteral("X−"), -1, 0, 0, 4, 0);
+    add_jog(QStringLiteral("X+"), 1, 0, 0, 4, 1);
+    add_jog(QStringLiteral("Y−"), 0, -1, 0, 4, 2);
+    add_jog(QStringLiteral("Y+"), 0, 1, 0, 4, 3);
+    add_jog(QStringLiteral("Z−"), 0, 0, -1, 5, 0);
+    add_jog(QStringLiteral("Z+"), 0, 0, 1, 5, 1);
 
-    columns->addWidget(manual, 1);
+    columns->addWidget(manual);
 
     auto* program = new QGroupBox(QStringLiteral("书写程序"));
     auto* program_grid = new QGridLayout(program);
@@ -283,7 +295,7 @@ void MachinePanel::buildUi() {
     skip_safety_ = new QCheckBox(QStringLiteral("跳过超程检查（危险）"));
     program_grid->addWidget(skip_safety_, 4, 0, 1, 5);
 
-    columns->addWidget(program, 2);
+    columns->addWidget(program);
     root->addLayout(columns);
 
     // ---- 日志 ----
@@ -293,6 +305,12 @@ void MachinePanel::buildUi() {
     log_view_->setMaximumHeight(90);
     log_view_->setPlaceholderText(QStringLiteral("通信日志"));
     root->addWidget(log_view_);
+
+    // 侧栏内容可能高于窗口，套一层滚动区，避免底部控件被裁掉。
+    scroll->setWidget(content);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->addWidget(scroll);
 }
 
 // ---------------------------------------------------------------------------

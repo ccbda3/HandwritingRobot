@@ -3,6 +3,7 @@
 #include <QStringList>
 #include <QTimer>
 
+#include "handwriting/bounds.hpp"
 #include "mainwindow.h"
 
 namespace {
@@ -51,6 +52,42 @@ int main(int argc, char* argv[]) {
 
     MainWindow window;
     window.show();
+
+    // 演示/快照参数：--demo-bounds min_x,min_y,max_x,max_y  --demo-head x,y
+    // 用于在没接机器的情况下也能展示已标定的边界线与机头位置。
+    using handwriting::bounds::Workspace;
+    bool have_demo = false;
+    Workspace demo_ws;
+    const int bi = arguments.indexOf(QStringLiteral("--demo-bounds"));
+    if (bi >= 0 && bi + 1 < arguments.size()) {
+        const QStringList parts = arguments.at(bi + 1).split(QLatin1Char(','));
+        if (parts.size() == 4) {
+            demo_ws.min_x = parts[0].toDouble();
+            demo_ws.min_y = parts[1].toDouble();
+            demo_ws.max_x = parts[2].toDouble();
+            demo_ws.max_y = parts[3].toDouble();
+            demo_ws.valid = true;
+            have_demo = true;
+        }
+    }
+    double demo_hx = 0.0;
+    double demo_hy = 0.0;
+    bool have_head = false;
+    const int hi = arguments.indexOf(QStringLiteral("--demo-head"));
+    if (hi >= 0 && hi + 1 < arguments.size()) {
+        const QStringList parts = arguments.at(hi + 1).split(QLatin1Char(','));
+        if (parts.size() == 2) {
+            demo_hx = parts[0].toDouble();
+            demo_hy = parts[1].toDouble();
+            have_head = true;
+        }
+    }
+    if (have_demo) {
+        window.setDemoWorkspace(demo_ws);
+    }
+    if (have_head) {
+        window.setDemoHead(demo_hx, demo_hy);
+    }
 
     if (snapshot_mode) {
         const QString path = arguments.at(index + 1);

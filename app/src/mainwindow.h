@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "handwriting/bounds.hpp"
 #include "handwriting/gcode.hpp"
 #include "handwriting/layout.hpp"
 #include "handwriting/render.hpp"
@@ -38,6 +39,10 @@ class MainWindow : public QMainWindow {
 
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+
+    /// 仅供快照/演示：注入已标定边界与机头位置。
+    void setDemoWorkspace(const handwriting::bounds::Workspace& ws);
+    void setDemoHead(double x, double y);
 
 private slots:
     void scheduleRefresh();
@@ -72,6 +77,7 @@ private:
     [[nodiscard]] const std::string& currentProgram() const noexcept {
         return current_program_;
     }
+
     void updateModeEnabled();
 
     // ---- 文本与画布 ----

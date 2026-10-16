@@ -601,3 +601,15 @@ void MainWindow::openGlyphCacheFolder() {
     }
     QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
+
+void MainWindow::setDemoWorkspace(const handwriting::bounds::Workspace& ws) {
+    if (machine_panel_ != nullptr) {
+        machine_panel_->setWorkspace(ws);
+    }
+}
+
+void MainWindow::setDemoHead(double x, double y) {
+    if (machine_panel_ != nullptr) {
+        machine_panel_->setDemoHead(x, y);
+    }
+}

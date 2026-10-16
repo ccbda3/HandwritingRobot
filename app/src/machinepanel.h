@@ -9,16 +9,22 @@
 
 #include <QWidget>
 
+#include <array>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
+#include "handwriting/bounds.hpp"
 #include "handwriting/grbl.hpp"
 #include "handwriting/serial.hpp"
+
+class BoundsWidget;
 
 class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
+class QGroupBox;
 class QLabel;
 class QPlainTextEdit;
 class QProgressBar;
@@ -38,6 +44,11 @@ public:
 
     /// 程序内容变化时调用，刷新「待发送」提示与安全检查结果。
     void notifyProgramChanged();
+
+    /// 仅供快照/演示使用：注入一个已标定的边界（不写磁盘）。
+    void setWorkspace(const handwriting::bounds::Workspace& ws);
+    /// 仅供快照/演示使用：注入机头位置（不要求连接）。
+    void setDemoHead(double x, double y);
 
     [[nodiscard]] bool connected() const;
 
@@ -59,6 +70,14 @@ private slots:
     void onPenDown();
     void onReadSettings();
 
+    // ---- 工作区标定（软限位） ----
+    void onStartCalibrate();
+    void onRecordCorner();
+    void onCancelCalibrate();
+    void onSaveBounds();
+    void onClearBounds();
+    void onSoftLimitToggled(bool on);
+
 private:
     void buildUi();
     void updateConnectionUi();
@@ -68,9 +87,14 @@ private:
     void setEnabledWhenConnected(bool enabled);
     void jog(double dx, double dy, double dz);
 
-    /// 上机前检查：行程、进给、零点。返回 false 表示用户取消。
+    /// 上机前检查：行程、进给、零点、软限位。返回 false 表示用户取消。
     [[nodiscard]] bool confirmSafety(const handwriting::grbl::ProgramBounds& bounds,
                                      const std::string& program);
+
+    void updateBoundsUi();
+    void updateCalibrateHint();
+    /// 是否正在标定（标定期间点动不受软限位拦截，否则根本到不了边界）。
+    [[nodiscard]] bool calibrating() const noexcept { return calibrate_step_ >= 1 && calibrate_step_ <= 4; }
 
     handwriting::serial::SerialPort transport_;
     std::unique_ptr<handwriting::grbl::Controller> controller_;
@@ -114,6 +138,23 @@ private:
     QCheckBox* skip_safety_{nullptr};
 
     QPlainTextEdit* log_view_{nullptr};
+
+    // ---- 工作区标定（软限位） ----
+    BoundsWidget* bounds_widget_{nullptr};
+    QLabel* bounds_label_{nullptr};
+    QPushButton* calibrate_button_{nullptr};   ///< 开始标定
+    QPushButton* clear_bounds_button_{nullptr}; ///< 清除已标定边界
+    QGroupBox* calibrate_wizard_{nullptr};       ///< 标定向导容器（平时隐藏）
+    QLabel* calibrate_hint_{nullptr};
+    QPushButton* calibrate_record_{nullptr};
+    QPushButton* calibrate_cancel_{nullptr};
+    QPushButton* calibrate_save_{nullptr};
+    QCheckBox* soft_limit_{nullptr};
+
+    int calibrate_step_{0};  ///< 0=未开始/已退出；1..4=记录第 N 个角；5=完成待保存
+    std::array<std::pair<double, double>, 4> calibrate_points_{};
+
+    handwriting::bounds::Workspace workspace_;  ///< 已标定（或已加载）的边界
 
     bool handshake_warned_{false};
 

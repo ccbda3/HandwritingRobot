@@ -23,6 +23,8 @@ add_executable(handwriting-studio
     src/mainwindow.h
     src/previewcanvas.cpp
     src/previewcanvas.h
+    src/boundswidget.cpp
+    src/boundswidget.h
 )
 
 target_include_directories(handwriting-studio PRIVATE src)

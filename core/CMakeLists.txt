@@ -1,4 +1,5 @@
 add_library(handwriting_core STATIC
+    src/bounds.cpp
     src/curve.cpp
     src/gcode.cpp
     src/glyph.cpp
@@ -65,6 +66,10 @@ if(HR_BUILD_TESTS)
     add_executable(test_grbl tests/test_grbl.cpp)
     target_link_libraries(test_grbl PRIVATE handwriting_core)
     add_test(NAME cpp.grbl COMMAND test_grbl)
+
+    add_executable(test_bounds tests/test_bounds.cpp)
+    target_link_libraries(test_bounds PRIVATE handwriting_core)
+    add_test(NAME cpp.bounds COMMAND test_bounds)
 
     # 版面导出工具。Python 侧调用它做跨语言一致性校验，
     # 防止 C++ 与 Python 两份版面实现悄悄漂移（见 ADR-0003 的后果一节）。

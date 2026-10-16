@@ -11,10 +11,14 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QStringList>
 #include <QTimer>
 #include <QVBoxLayout>
 
 #include <cmath>
+#include <filesystem>
+
+#include "boundswidget.h"
 
 using handwriting::grbl::Controller;
 using handwriting::grbl::Options;
@@ -59,6 +63,11 @@ MachinePanel::MachinePanel(QWidget* parent) : QWidget(parent) {
     refreshPorts();
     updateConnectionUi();
     updateProgramUi();
+
+    // 载入上次标定过的边界（如果存在），示意图立刻就能显示。
+    workspace_ = handwriting::bounds::load(handwriting::bounds::default_path());
+    bounds_widget_->setWorkspace(workspace_);
+    updateBoundsUi();
 }
 
 MachinePanel::~MachinePanel() {
@@ -116,6 +125,68 @@ void MachinePanel::buildUi() {
     }
     status_row->addStretch();
     root->addLayout(status_row);
+
+    // ---- 工作区标定（软限位） ----
+    // 步进机没有位置反馈，上电后手推机头到物理角落、再通电点动记录四角，
+    // 标定出"设备能走到哪里"。之后所有运动都对照这个矩形做越界检查，
+    // 机头就不会冲到机械端点扯断传动皮带。
+    auto* bounds_box = new QGroupBox(QStringLiteral("工作区标定（软限位）"));
+    auto* bounds_layout = new QHBoxLayout(bounds_box);
+    bounds_layout->setSpacing(10);
+
+    bounds_widget_ = new BoundsWidget;
+    bounds_widget_->setMinimumSize(220, 160);
+    bounds_layout->addWidget(bounds_widget_, 0);
+
+    auto* bounds_right = new QVBoxLayout;
+    bounds_right->setSpacing(4);
+
+    bounds_label_ = new QLabel(QStringLiteral("未标定"));
+    bounds_label_->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    bounds_right->addWidget(bounds_label_);
+
+    soft_limit_ = new QCheckBox(QStringLiteral("启用软限位（越界自动拦截）"));
+    soft_limit_->setChecked(true);
+    connect(soft_limit_, &QCheckBox::toggled, this, &MachinePanel::onSoftLimitToggled);
+    bounds_right->addWidget(soft_limit_);
+
+    calibrate_button_ = new QPushButton(QStringLiteral("开始标定"));
+    connect(calibrate_button_, &QPushButton::clicked, this, &MachinePanel::onStartCalibrate);
+    bounds_right->addWidget(calibrate_button_);
+
+    clear_bounds_button_ = new QPushButton(QStringLiteral("清除边界"));
+    connect(clear_bounds_button_, &QPushButton::clicked, this, &MachinePanel::onClearBounds);
+    bounds_right->addWidget(clear_bounds_button_);
+
+    // 标定向导（平时隐藏，点「开始标定」后出现）
+    calibrate_wizard_ = new QGroupBox(QStringLiteral("标定向导"));
+    auto* wizard_layout = new QVBoxLayout(calibrate_wizard_);
+    wizard_layout->setSpacing(4);
+
+    calibrate_hint_ = new QLabel;
+    calibrate_hint_->setWordWrap(true);
+    wizard_layout->addWidget(calibrate_hint_);
+
+    calibrate_record_ = new QPushButton(QStringLiteral("记录此角"));
+    connect(calibrate_record_, &QPushButton::clicked, this, &MachinePanel::onRecordCorner);
+    wizard_layout->addWidget(calibrate_record_);
+
+    auto* wizard_buttons = new QHBoxLayout;
+    calibrate_cancel_ = new QPushButton(QStringLiteral("取消"));
+    connect(calibrate_cancel_, &QPushButton::clicked, this, &MachinePanel::onCancelCalibrate);
+    calibrate_save_ = new QPushButton(QStringLiteral("保存边界"));
+    connect(calibrate_save_, &QPushButton::clicked, this, &MachinePanel::onSaveBounds);
+    wizard_buttons->addWidget(calibrate_cancel_);
+    wizard_buttons->addWidget(calibrate_save_);
+    wizard_layout->addLayout(wizard_buttons);
+
+    calibrate_wizard_->setVisible(false);
+    bounds_right->addWidget(calibrate_wizard_);
+
+    bounds_right->addStretch(1);
+    bounds_layout->addLayout(bounds_right, 1);
+
+    root->addWidget(bounds_box);
 
     // ---- 第三行：手动控制 + 程序控制 ----
     auto* columns = new QHBoxLayout;
@@ -327,6 +398,14 @@ void MachinePanel::onPoll() {
 
     updateStatusUi();
     updateProgramUi();
+
+    // 示意图实时机头位置：优先工件坐标，回落到机床坐标
+    const auto& status = controller_->status();
+    if (status.has_work_position) {
+        bounds_widget_->setHead(status.work[0], status.work[1]);
+    } else if (status.has_machine_position) {
+        bounds_widget_->setHead(status.machine[0], status.machine[1]);
+    }
 }
 
 bool MachinePanel::connected() const {
@@ -395,6 +474,136 @@ void MachinePanel::updateStatusUi() {
     } else {
         limits_label_->setText(QStringLiteral("行程 未知（点「读参数」）"));
     }
+}
+
+void MachinePanel::updateBoundsUi() {
+    if (workspace_.valid) {
+        bounds_label_->setText(
+            QStringLiteral("已标定：宽 %1 × 高 %2 mm\nX %3~%4  Y %5~%6")
+                .arg(format_mm(workspace_.width()))
+                .arg(format_mm(workspace_.height()))
+                .arg(format_mm(workspace_.min_x))
+                .arg(format_mm(workspace_.max_x))
+                .arg(format_mm(workspace_.min_y))
+                .arg(format_mm(workspace_.max_y)));
+        bounds_label_->setStyleSheet(QStringLiteral("color:#3ddc97;"));
+        clear_bounds_button_->setEnabled(true);
+    } else {
+        bounds_label_->setText(QStringLiteral("未标定：点「开始标定」记录四个角"));
+        bounds_label_->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+        clear_bounds_button_->setEnabled(false);
+    }
+}
+
+void MachinePanel::setWorkspace(const handwriting::bounds::Workspace& ws) {
+    workspace_ = ws;
+    bounds_widget_->setWorkspace(workspace_);
+    updateBoundsUi();
+}
+
+void MachinePanel::setDemoHead(double x, double y) {
+    bounds_widget_->setHead(x, y);
+}
+
+void MachinePanel::onSoftLimitToggled(bool /*on*/) {
+    // 仅作状态记录；实际拦截在 jog 与 confirmSafety 中读取 soft_limit_ 状态。
+    appendLog(QStringLiteral("软限位已%1").arg(soft_limit_->isChecked()
+                                                  ? QStringLiteral("启用")
+                                                  : QStringLiteral("关闭")));
+}
+
+void MachinePanel::onStartCalibrate() {
+    if (!connected()) {
+        QMessageBox::warning(this, QStringLiteral("未连接"),
+                             QStringLiteral("请先连接机器并通电，再开始标定。"));
+        return;
+    }
+    calibrate_step_ = 1;
+    calibrate_points_ = {};
+    calibrate_wizard_->setVisible(true);
+    calibrate_record_->setVisible(true);
+    calibrate_save_->setVisible(false);
+    calibrate_button_->setEnabled(false);
+    bounds_widget_->setActiveCorner(handwriting::bounds::Corner::TopLeft);
+    updateCalibrateHint();
+    appendLog(QStringLiteral("开始标定：依次把机头移到四个角并记录"));
+}
+
+void MachinePanel::updateCalibrateHint() {
+    using handwriting::bounds::Corner;
+    static const QStringList steps = {
+        QStringLiteral("① 把机头移到最左上角。若通电前已手推到位，直接点「记录此角」。"),
+        QStringLiteral("② 用点动把机头移到最右上角，然后点「记录此角」。"),
+        QStringLiteral("③ 用点动把机头移到最右下角，然后点「记录此角」。"),
+        QStringLiteral("④ 用点动把机头移到最左下角，然后点「记录此角」。"),
+    };
+    if (calibrate_step_ >= 1 && calibrate_step_ <= 4) {
+        calibrate_hint_->setText(steps[calibrate_step_ - 1]);
+        calibrate_record_->setText(
+            QStringLiteral("记录此角（%1/4）").arg(calibrate_step_));
+        const Corner corner = static_cast<Corner>(calibrate_step_ - 1);
+        bounds_widget_->setActiveCorner(corner);
+    } else if (calibrate_step_ == 5) {
+        calibrate_hint_->setText(
+            QStringLiteral("四个角已记录。确认无误后点「保存边界」，否则点「取消」重来。"));
+        bounds_widget_->setActiveCorner(std::nullopt);
+    }
+}
+
+void MachinePanel::onRecordCorner() {
+    if (calibrate_step_ < 1 || calibrate_step_ > 4) {
+        return;
+    }
+    const auto& status = controller_->status();
+    if (!status.has_work_position && !status.has_machine_position) {
+        QMessageBox::warning(this, QStringLiteral("暂无位置"),
+                             QStringLiteral("还没收到机器位置。等状态刷新后再试。"));
+        return;
+    }
+    const double x = status.has_work_position ? status.work[0] : status.machine[0];
+    const double y = status.has_work_position ? status.work[1] : status.machine[1];
+    calibrate_points_[static_cast<std::size_t>(calibrate_step_ - 1)] = {x, y};
+    appendLog(QStringLiteral("记录第 %1 个角：X %2  Y %3")
+                  .arg(calibrate_step_)
+                  .arg(format_mm(x))
+                  .arg(format_mm(y)));
+
+    ++calibrate_step_;
+    if (calibrate_step_ > 4) {
+        workspace_ = handwriting::bounds::from_corners(calibrate_points_);
+        bounds_widget_->setWorkspace(workspace_);
+        calibrate_step_ = 5;
+        calibrate_record_->setVisible(false);
+        calibrate_save_->setVisible(true);
+    }
+    updateCalibrateHint();
+}
+
+void MachinePanel::onCancelCalibrate() {
+    calibrate_step_ = 0;
+    calibrate_wizard_->setVisible(false);
+    calibrate_button_->setEnabled(true);
+    bounds_widget_->setActiveCorner(std::nullopt);
+    updateBoundsUi();
+    appendLog(QStringLiteral("标定已取消"));
+}
+
+void MachinePanel::onSaveBounds() {
+    handwriting::bounds::save(workspace_, handwriting::bounds::default_path());
+    calibrate_step_ = 0;
+    calibrate_wizard_->setVisible(false);
+    calibrate_button_->setEnabled(true);
+    updateBoundsUi();
+    appendLog(QStringLiteral("已保存工作区边界到 data/workspace-bounds.json"));
+}
+
+void MachinePanel::onClearBounds() {
+    workspace_ = {};
+    bounds_widget_->setWorkspace(workspace_);
+    std::error_code ec;
+    std::filesystem::remove(handwriting::bounds::default_path(), ec);
+    updateBoundsUi();
+    appendLog(QStringLiteral("已清除工作区边界"));
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +703,32 @@ bool MachinePanel::confirmSafety(const ProgramBounds& bounds, const std::string&
         issues << QStringLiteral("程序进给 %1 超过机器上限 %2 mm/min，GRBL 会自动截断")
                       .arg(format_mm(bounds.max_feed))
                       .arg(format_mm(limits.max_rate_x));
+    }
+
+    // 软限位：程序整体必须落在已标定的工作区内。这是防止机头冲到机械端点
+    // 扯断皮带的关键 —— 即便 GRBL 自己没有硬限位开关也照样生效。
+    if (soft_limit_->isChecked()) {
+        if (!workspace_.valid) {
+            issues << QStringLiteral("未标定工作区（点「开始标定」记录四个角），无法确认不会超程");
+        } else {
+            constexpr double kMargin = 0.5;  // 允许范围比物理边界收缩 0.5mm
+            const auto check = [&](double mn, double mx, const QString& axis) {
+                if (mn < workspace_.min_x - kMargin) {
+                    issues << QStringLiteral("%1 最小值 %2 mm 超出左边界 %3 mm")
+                                      .arg(axis)
+                                      .arg(format_mm(mn))
+                                      .arg(format_mm(workspace_.min_x));
+                }
+                if (mx > workspace_.max_x + kMargin) {
+                    issues << QStringLiteral("%1 最大值 %2 mm 超出右边界 %3 mm")
+                                      .arg(axis)
+                                      .arg(format_mm(mx))
+                                      .arg(format_mm(workspace_.max_x));
+                }
+            };
+            check(bounds.min_x, bounds.max_x, QStringLiteral("X"));
+            check(bounds.min_y, bounds.max_y, QStringLiteral("Y"));
+        }
     }
 
     const auto& status = controller_->status();
@@ -633,7 +868,31 @@ void MachinePanel::onPenDown() {
 void MachinePanel::jog(double dx, double dy, double dz) {
     const double step = jog_step_->value();
     const double feed = jog_feed_->value();
-    controller_->jog(dx * step, dy * step, dz * step, feed);
+    const double tx = dx * step;
+    const double ty = dy * step;
+
+    // 软限位拦截：标定期间放行（否则到不了边界），其余情况如果目标会越界，
+    // 改为贴着边界走，绝不冲出 —— 这正是保护传动皮带的关键。
+    if (soft_limit_->isChecked() && workspace_.valid && !calibrating()) {
+        const auto& status = controller_->status();
+        const double cx = status.has_work_position ? status.work[0] : status.machine[0];
+        const double cy = status.has_work_position ? status.work[1] : status.machine[1];
+        const double target_x = cx + tx;
+        const double target_y = cy + ty;
+        const double clamped_x = std::clamp(target_x, workspace_.min_x, workspace_.max_x);
+        const double clamped_y = std::clamp(target_y, workspace_.min_y, workspace_.max_y);
+        if (std::fabs(clamped_x - target_x) > 0.01 || std::fabs(clamped_y - target_y) > 0.01) {
+            appendLog(QStringLiteral("软限位：点动被限制在边界内（X %1~%2  Y %3~%4）")
+                          .arg(format_mm(workspace_.min_x))
+                          .arg(format_mm(workspace_.max_x))
+                          .arg(format_mm(workspace_.min_y))
+                          .arg(format_mm(workspace_.max_y)));
+            controller_->jog(clamped_x - cx, clamped_y - cy, dz * step, feed);
+            return;
+        }
+    }
+
+    controller_->jog(tx, ty, dz * step, feed);
 }
 
 void MachinePanel::appendLog(const QString& text) {

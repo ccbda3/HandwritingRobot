@@ -2,9 +2,12 @@ add_library(handwriting_core STATIC
     src/curve.cpp
     src/gcode.cpp
     src/glyph.cpp
+    src/grbl.cpp
     src/json.cpp
     src/layout.cpp
     src/render.cpp
+    src/serial_posix.cpp
+    src/serial_win32.cpp
     src/trajectory.cpp
     src/utf8.cpp
 )
@@ -17,6 +20,12 @@ target_include_directories(handwriting_core PUBLIC
 )
 
 target_compile_features(handwriting_core PUBLIC cxx_std_17)
+
+# 串口枚举用 SetupAPI 拿友好名（"USB-SERIAL CH340 (COM3)"），
+# 比只给 COM 号有用得多 —— 用户靠它才能认出哪块板子是哪块
+if(WIN32)
+    target_link_libraries(handwriting_core PUBLIC setupapi)
+endif()
 
 if(MSVC)
     target_compile_options(handwriting_core PRIVATE /W4 /utf-8)
@@ -52,6 +61,10 @@ if(HR_BUILD_TESTS)
     add_executable(test_layout tests/test_layout.cpp)
     target_link_libraries(test_layout PRIVATE handwriting_core)
     add_test(NAME cpp.layout COMMAND test_layout)
+
+    add_executable(test_grbl tests/test_grbl.cpp)
+    target_link_libraries(test_grbl PRIVATE handwriting_core)
+    add_test(NAME cpp.grbl COMMAND test_grbl)
 
     # 版面导出工具。Python 侧调用它做跨语言一致性校验，
     # 防止 C++ 与 Python 两份版面实现悄悄漂移（见 ADR-0003 的后果一节）。

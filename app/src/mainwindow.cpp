@@ -1,11 +1,13 @@
 #include "mainwindow.h"
 
+#include "machinepanel.h"
 #include "previewcanvas.h"
 
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
@@ -271,6 +273,16 @@ void MainWindow::buildUi() {
     connect(show_rules_, &QCheckBox::toggled, this,
             [this](bool on) { canvas_->setShowRules(on); });
     connect(cache_edit_, &QLineEdit::editingFinished, this, &MainWindow::scheduleRefresh);
+
+    // ---- 机器控制面板（底部可折叠） ----
+    auto* dock = new QDockWidget(QStringLiteral("机器控制 · 串口直连"), this);
+    dock->setObjectName(QStringLiteral("machineDock"));
+    machine_panel_ = new MachinePanel(dock);
+    machine_panel_->setProgramProvider([this] { return current_program_; });
+    dock->setWidget(machine_panel_);
+    dock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
+    addDockWidget(Qt::BottomDockWidgetArea, dock);
+    dock_ = dock;
 }
 
 void MainWindow::buildMenus() {
@@ -309,6 +321,16 @@ void MainWindow::buildMenus() {
     rules_action->setCheckable(true);
     rules_action->setChecked(true);
     connect(rules_action, &QAction::toggled, show_rules_, &QCheckBox::setChecked);
+
+    view_menu->addSeparator();
+    auto* dock_action = view_menu->addAction(QStringLiteral("机器控制面板(&M)"));
+    dock_action->setCheckable(true);
+    dock_action->setChecked(true);
+    connect(dock_action, &QAction::toggled, this, [this](bool on) {
+        if (dock_ != nullptr) {
+            dock_->setVisible(on);
+        }
+    });
 
     auto* refresh_action = view_menu->addAction(QStringLiteral("重新生成(&R)"));
     refresh_action->setShortcut(QKeySequence(QStringLiteral("F5")));
@@ -429,6 +451,10 @@ void MainWindow::refresh() {
 
     if (!rendered.ok) {
         canvas_->clearContent();
+        current_program_.clear();
+        if (machine_panel_ != nullptr) {
+            machine_panel_->notifyProgramChanged();
+        }
         status_chars_->setText(QStringLiteral("—"));
         status_page_->setText(QStringLiteral("—"));
         status_machine_->setText(rendered.error);
@@ -437,6 +463,9 @@ void MainWindow::refresh() {
 
     canvas_->setContent(rendered.page, rendered.glyphs);
     updateStatus(rendered);
+    if (machine_panel_ != nullptr) {
+        machine_panel_->notifyProgramChanged();
+    }
 }
 
 void MainWindow::updateStatus(const Rendered& rendered) {
@@ -449,6 +478,7 @@ void MainWindow::updateStatus(const Rendered& rendered) {
 
     const auto program =
         handwriting::gcode::glyphs_to_gcode(rendered.glyphs, rendered.page, plotSettings());
+    current_program_ = program.text;  // 缓存给机器面板用
     const double serial_seconds =
         static_cast<double>(program.stats.line_count) / kGrblLinesPerSecond;
 

@@ -13,6 +13,7 @@
 #include <QMainWindow>
 #include <QString>
 
+#include <string>
 #include <vector>
 
 #include "handwriting/gcode.hpp"
@@ -28,6 +29,8 @@ class QLineEdit;
 class QPlainTextEdit;
 class QSpinBox;
 class QTimer;
+class QDockWidget;
+class MachinePanel;
 class PreviewCanvas;
 
 class MainWindow : public QMainWindow {
@@ -64,6 +67,11 @@ private:
     [[nodiscard]] handwriting::gcode::PlotSettings plotSettings() const;
     [[nodiscard]] Rendered renderNow() const;
     void updateStatus(const Rendered& rendered);
+    /// 供机器面板取用当前 G 代码。只返回缓存，不重新生成 ——
+    /// 面板每 20ms 轮询一次，这里若真去生成会把界面卡死。
+    [[nodiscard]] const std::string& currentProgram() const noexcept {
+        return current_program_;
+    }
     void updateModeEnabled();
 
     // ---- 文本与画布 ----
@@ -102,4 +110,8 @@ private:
     QLabel* status_zoom_{nullptr};
 
     QTimer* refresh_timer_{nullptr};
+
+    MachinePanel* machine_panel_{nullptr};
+    QDockWidget* dock_{nullptr};
+    std::string current_program_;
 };

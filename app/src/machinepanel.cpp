@@ -231,14 +231,14 @@ void MachinePanel::buildUi() {
     manual_grid->addWidget(new QLabel(QStringLiteral("步长")), 2, 0);
     jog_step_ = new QDoubleSpinBox;
     jog_step_->setRange(0.1, 100.0);
-    jog_step_->setValue(1.0);
+    jog_step_->setValue(0.1);  // 与奎享雕刻的 jogDist 一致，便于精细对位
     jog_step_->setSuffix(QStringLiteral(" mm"));
     manual_grid->addWidget(jog_step_, 2, 1, 1, 3);
 
     manual_grid->addWidget(new QLabel(QStringLiteral("进给")), 3, 0);
     jog_feed_ = new QDoubleSpinBox;
     jog_feed_->setRange(10.0, 12000.0);
-    jog_feed_->setValue(1000.0);
+    jog_feed_->setValue(2500.0);
     jog_feed_->setDecimals(0);
     jog_feed_->setSuffix(QStringLiteral(" mm/min"));
     manual_grid->addWidget(jog_feed_, 3, 1, 1, 3);
@@ -633,6 +633,10 @@ void MachinePanel::setProgramProvider(std::function<std::string()> provider) {
     notifyProgramChanged();
 }
 
+void MachinePanel::setPenZProvider(std::function<std::pair<double, double>()> provider) {
+    pen_z_provider_ = std::move(provider);
+}
+
 void MachinePanel::notifyProgramChanged() {
     // 只有这里才真正向 MainWindow 要程序。生成一页 G 代码约 40ms，
     // 而 onPoll 每 20ms 跑一次 —— 若在 updateProgramUi 里调用 provider，
@@ -874,13 +878,16 @@ void MachinePanel::onReadSettings() {
 }
 
 void MachinePanel::onPenUp() {
-    controller_->pen_up(3.0);
-    appendLog(QStringLiteral("抬笔 Z3"));
+    // 用界面上的抬笔 Z 值，不写死 —— 不同机器 Z 方向可能相反
+    const double z = pen_z_provider_ ? pen_z_provider_().first : 0.0;
+    controller_->pen_up(z);
+    appendLog(QStringLiteral("抬笔 Z%1").arg(z, 0, 'f', 2));
 }
 
 void MachinePanel::onPenDown() {
-    controller_->pen_down(0.0);
-    appendLog(QStringLiteral("落笔 Z0"));
+    const double z = pen_z_provider_ ? pen_z_provider_().second : 6.0;
+    controller_->pen_down(z);
+    appendLog(QStringLiteral("落笔 Z%1").arg(z, 0, 'f', 2));
 }
 
 void MachinePanel::jog(double dx, double dy, double dz) {

@@ -147,10 +147,12 @@ def _build_parser() -> argparse.ArgumentParser:
     style.add_argument("--writing-speed", type=float, default=2.5, help="合成时序用的书写速度")
 
     machine = render.add_argument_group("机器参数")
-    machine.add_argument("--feed-draw", type=float, default=1200.0, help="书写进给 mm/min")
+    # 默认值取自本机（奎享雕刻）实测配置：书写 8000、抬笔 Z=0、落笔 Z=6。
+    # 注意这台机器 Z 越大越往下压，与「Z 向上为正」的常见约定相反，按自己机器实测。
+    machine.add_argument("--feed-draw", type=float, default=8000.0, help="书写进给 mm/min")
     machine.add_argument("--feed-travel", type=float, default=3000.0, help="空行程进给 mm/min")
-    machine.add_argument("--pen-up-z", type=float, default=3.0, help="抬笔 Z 高度")
-    machine.add_argument("--pen-down-z", type=float, default=0.0, help="落笔 Z 高度")
+    machine.add_argument("--pen-up-z", type=float, default=0.0, help="抬笔 Z 值")
+    machine.add_argument("--pen-down-z", type=float, default=6.0, help="落笔 Z 值")
     machine.add_argument(
         "--spindle",
         action="store_true",

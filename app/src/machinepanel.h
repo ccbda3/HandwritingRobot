@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "handwriting/bounds.hpp"
 #include "handwriting/grbl.hpp"
@@ -41,6 +42,10 @@ public:
 
     /// 由 MainWindow 提供当前要书写的 G 代码。空串表示没有可发的内容。
     void setProgramProvider(std::function<std::string()> provider);
+
+    /// 由 MainWindow 提供抬笔 / 落笔的 Z 值（毫米），供手动「抬笔 / 落笔」按钮使用。
+    /// 不同机器的 Z 方向可能相反（有的机器 Z 越大越压得深），所以这里不写死。
+    void setPenZProvider(std::function<std::pair<double, double>()> provider);
 
     /// 程序内容变化时调用，刷新「待发送」提示与安全检查结果。
     void notifyProgramChanged();
@@ -99,6 +104,7 @@ private:
     handwriting::serial::SerialPort transport_;
     std::unique_ptr<handwriting::grbl::Controller> controller_;
     std::function<std::string()> program_provider_;
+    std::function<std::pair<double, double>()> pen_z_provider_;
 
     QTimer* poll_timer_{nullptr};
     QTimer* status_timer_{nullptr};

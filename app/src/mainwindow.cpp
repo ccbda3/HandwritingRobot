@@ -36,6 +36,7 @@
 #include <cmath>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -200,11 +201,14 @@ void MainWindow::buildUi() {
     pen_combo_->addItem(QStringLiteral("主轴 PWM（舵机 / 电磁铁）"), 1);
     machine_form->addRow(QStringLiteral("抬落笔"), pen_combo_);
 
-    feed_draw_ = make_double(60.0, 12000.0, 1200.0, 0, QStringLiteral(" mm/min"));
+    // 默认值取自本机（奎享雕刻）实测配置：书写进给 8000 mm/min；
+    // 抬笔 Z=0、落笔 Z=6 —— 这台机器 Z 越大越往下压，与常见「Z 向上为正」相反。
+    // 进给若出墨不匀可调低；Z 值务必按自己机器实测。
+    feed_draw_ = make_double(60.0, 12000.0, 8000.0, 0, QStringLiteral(" mm/min"));
     machine_form->addRow(QStringLiteral("书写进给"), feed_draw_);
-    pen_up_z_ = make_double(-50.0, 50.0, 3.0, 2, QStringLiteral(" mm"));
+    pen_up_z_ = make_double(-50.0, 50.0, 0.0, 2, QStringLiteral(" mm"));
     machine_form->addRow(QStringLiteral("抬笔 Z"), pen_up_z_);
-    pen_down_z_ = make_double(-50.0, 50.0, 0.0, 2, QStringLiteral(" mm"));
+    pen_down_z_ = make_double(-50.0, 50.0, 6.0, 2, QStringLiteral(" mm"));
     machine_form->addRow(QStringLiteral("落笔 Z"), pen_down_z_);
 
     panel_layout->addWidget(machine_group);
@@ -277,6 +281,8 @@ void MainWindow::buildUi() {
     dock->setObjectName(QStringLiteral("machineDock"));
     machine_panel_ = new MachinePanel(dock);
     machine_panel_->setProgramProvider([this] { return current_program_; });
+    machine_panel_->setPenZProvider(
+        [this] { return std::make_pair(pen_up_z_->value(), pen_down_z_->value()); });
     dock->setWidget(machine_panel_);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, dock);

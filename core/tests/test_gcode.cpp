@@ -95,6 +95,14 @@ int main() {
     HR_CHECK(two_rows.size() == 2);
     HR_CHECK(two_rows[1] == "G0 X12 Y44");
 
+    // ---- Y 轴翻转（机器 Y+ 朝上时用）----
+    handwriting::gcode::PlotSettings flipped;
+    flipped.invert_y = true;
+    const auto flipped_travels =
+        travels_of(split_lines(strokes_to_gcode({{single_char()}}, flipped)));
+    HR_CHECK(flipped_travels.size() == 1);
+    HR_CHECK(flipped_travels[0] == "G0 X12 Y-14");
+
     // ---- 统计 ----
     handwriting::gcode::GcodeBuilder builder;
     builder.plot_stroke(single_char().strokes().front(), 10.0, 10.0, 20.0);

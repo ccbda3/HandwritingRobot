@@ -211,6 +211,10 @@ void MainWindow::buildUi() {
     pen_down_z_ = make_double(-50.0, 50.0, 6.0, 2, QStringLiteral(" mm"));
     machine_form->addRow(QStringLiteral("落笔 Z"), pen_down_z_);
 
+    // 有些机器 Y+ 朝上（纸上向下走是 -Y），勾上后输出的 Y 取反。
+    invert_y_ = new QCheckBox(QStringLiteral("Y 轴翻转（向下为负）"));
+    machine_form->addRow(QString(), invert_y_);
+
     panel_layout->addWidget(machine_group);
 
     // ---- 数据源 ----
@@ -270,6 +274,7 @@ void MainWindow::buildUi() {
     }
     connect(pen_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &MainWindow::scheduleRefresh);
+    connect(invert_y_, &QCheckBox::toggled, this, &MainWindow::scheduleRefresh);
     connect(show_cells_, &QCheckBox::toggled, this,
             [this](bool on) { canvas_->setShowCells(on); });
     connect(show_rules_, &QCheckBox::toggled, this,
@@ -413,6 +418,7 @@ handwriting::gcode::PlotSettings MainWindow::plotSettings() const {
     settings.feed_draw = feed_draw_->value();
     settings.pen_up_z = pen_up_z_->value();
     settings.pen_down_z = pen_down_z_->value();
+    settings.invert_y = (invert_y_ != nullptr) && invert_y_->isChecked();
     return settings;
 }
 

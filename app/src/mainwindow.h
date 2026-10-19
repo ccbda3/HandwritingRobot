@@ -105,6 +105,7 @@ private:
     QDoubleSpinBox* feed_draw_{nullptr};
     QDoubleSpinBox* pen_up_z_{nullptr};
     QDoubleSpinBox* pen_down_z_{nullptr};
+    QCheckBox* invert_y_{nullptr};
 
     // ---- 数据源 ----
     QLineEdit* cache_edit_{nullptr};

@@ -35,6 +35,20 @@ class TestProgramStructure:
         assert lines[3] == "G0 X12 Y14"
 
 
+class TestInvertY:
+    def test_default_keeps_y_positive(self) -> None:
+        lines = strokes_to_gcode([[single_char()]]).strip().splitlines()
+        assert "G0 X12 Y14" in lines
+        assert "G1 X16 Y18 F1200" in lines
+
+    def test_invert_y_negates_output(self) -> None:
+        # 机器 Y+ 朝上时用：纸上向下走对应 -Y
+        text = strokes_to_gcode([[single_char()]], PlotSettings(invert_y=True))
+        lines = text.strip().splitlines()
+        assert "G0 X12 Y-14" in lines
+        assert "G1 X16 Y-18 F1200" in lines
+
+
 class TestLayout:
     def test_second_char_is_offset_by_size_plus_gap(self) -> None:
         row = [single_char(), single_char()]

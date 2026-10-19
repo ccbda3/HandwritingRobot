@@ -74,13 +74,16 @@ void GcodeBuilder::pen_down() {
 
 void GcodeBuilder::travel_to(double x, double y) {
     pen_up();
-    lines_.push_back("G0 X" + fmt(x, settings_.decimals) + " Y" + fmt(y, settings_.decimals));
+    const double out_y = settings_.invert_y ? -y : y;
+    lines_.push_back("G0 X" + fmt(x, settings_.decimals) + " Y" +
+                     fmt(out_y, settings_.decimals));
 }
 
 void GcodeBuilder::draw_to(double x, double y) {
     pen_down();
-    lines_.push_back("G1 X" + fmt(x, settings_.decimals) + " Y" + fmt(y, settings_.decimals) +
-                     " F" + fmt(settings_.feed_draw, 0));
+    const double out_y = settings_.invert_y ? -y : y;
+    lines_.push_back("G1 X" + fmt(x, settings_.decimals) + " Y" +
+                     fmt(out_y, settings_.decimals) + " F" + fmt(settings_.feed_draw, 0));
 }
 
 void GcodeBuilder::plot_stroke(const Stroke& stroke, double origin_x, double origin_y,

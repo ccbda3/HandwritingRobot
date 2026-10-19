@@ -49,6 +49,10 @@ class PlotSettings:
     feed_draw: float = 1200.0
     feed_travel: float = 3000.0
 
+    # 坐标系
+    # 部分机器 Y+ 朝上（在纸上向下走对应 -Y），开启后输出 y = -y。
+    invert_y: bool = False
+
     # 输出
     decimals: int = 3
     header: tuple[str, ...] = DEFAULT_HEADER
@@ -116,12 +120,14 @@ class _Writer:
 
     def travel_to(self, x: float, y: float) -> None:
         self.pen_up()
-        self.lines.append(f"G0 X{_fmt(x, self.s.decimals)} Y{_fmt(y, self.s.decimals)}")
+        out_y = -y if self.s.invert_y else y
+        self.lines.append(f"G0 X{_fmt(x, self.s.decimals)} Y{_fmt(out_y, self.s.decimals)}")
 
     def draw_to(self, x: float, y: float) -> None:
         self.pen_down()
+        out_y = -y if self.s.invert_y else y
         self.lines.append(
-            f"G1 X{_fmt(x, self.s.decimals)} Y{_fmt(y, self.s.decimals)} "
+            f"G1 X{_fmt(x, self.s.decimals)} Y{_fmt(out_y, self.s.decimals)} "
             f"F{_fmt(self.s.feed_draw, 0)}"
         )
 

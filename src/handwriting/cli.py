@@ -154,6 +154,11 @@ def _build_parser() -> argparse.ArgumentParser:
     machine.add_argument("--pen-up-z", type=float, default=0.0, help="抬笔 Z 值")
     machine.add_argument("--pen-down-z", type=float, default=6.0, help="落笔 Z 值")
     machine.add_argument(
+        "--invert-y",
+        action="store_true",
+        help="Y 轴取反（机器 Y+ 朝上、纸上向下走是 -Y 时使用）",
+    )
+    machine.add_argument(
         "--spindle",
         action="store_true",
         help="用主轴 PWM（M3/M5）控制抬落笔，而不是 Z 轴",
@@ -346,6 +351,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
         use_z_axis=not args.spindle,
         feed_draw=args.feed_draw,
         feed_travel=args.feed_travel,
+        invert_y=args.invert_y,
     )
 
     # chars_per_line 传 0：折行统一由 layout 负责，避免两处各折一次

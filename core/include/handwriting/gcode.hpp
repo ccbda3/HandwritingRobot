@@ -34,6 +34,11 @@ struct PlotSettings {
     double feed_draw{1200.0};
     double feed_travel{3000.0};
 
+    // 坐标系
+    // 部分机器 Y+ 朝上（在纸上向下走对应 -Y），此时把 Y 取反即可匹配。
+    // 版面按「原点在左上、Y 向下为正」计算，invert_y=true 会输出 y = -y。
+    bool invert_y{false};
+
     // 输出
     int decimals{3};
     std::vector<std::string> header{"G21", "G90", "G17"};

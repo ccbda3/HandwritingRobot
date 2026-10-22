@@ -4,7 +4,7 @@ project(
     HandwritingRobot
     VERSION 0.1.0
     DESCRIPTION "学习个人笔迹风格，生成带书写时序的笔画轨迹并导出 GRBL G 代码"
-    HOMEPAGE_URL "https://github.com/Whaoy/HandwritingRobot"
+    HOMEPAGE_URL "https://github.com/ccbda3/HandwritingRobot"
     LANGUAGES CXX
 )
 

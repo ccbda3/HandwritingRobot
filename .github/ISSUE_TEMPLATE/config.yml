@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: 系统架构与设计取舍
-    url: https://github.com/Whaoy/HandwritingRobot/blob/main/docs/architecture.md
+    url: https://github.com/ccbda3/HandwritingRobot/blob/main/docs/architecture.md
     about: 提交建议前先看看已有的设计决策
   - name: 架构决策记录
-    url: https://github.com/Whaoy/HandwritingRobot/tree/main/docs/adr
+    url: https://github.com/ccbda3/HandwritingRobot/tree/main/docs/adr
     about: 每个不可逆决策的理由都记录在这里
   - name: 笔迹数据格式规范
-    url: https://github.com/Whaoy/HandwritingRobot/blob/main/docs/data-format.md
+    url: https://github.com/ccbda3/HandwritingRobot/blob/main/docs/data-format.md
     about: 采集数据的字段定义与质量门槛

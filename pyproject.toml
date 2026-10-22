@@ -35,8 +35,8 @@ dev = [
 handwriting = "handwriting.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Whaoy/HandwritingRobot"
-Issues = "https://github.com/Whaoy/HandwritingRobot/issues"
+Homepage = "https://github.com/ccbda3/HandwritingRobot"
+Issues = "https://github.com/ccbda3/HandwritingRobot/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/handwriting"]

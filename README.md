@@ -258,6 +258,6 @@ Python 的 65 ms 是 15 fps，C++ 的 0.13 ms 无感。加上发布版可彻底�
 - C++：CMake ≥ 3.21，支持 C++17 的编译器（MSVC 2019+ / GCC 11+ / Clang 14+）
 - Qt：Qt 6.4+（推荐）或 Qt 5.15
 - Python：≥ 3.10
-- 本地推理显卡：NVIDIA RTX 5060 8GB —— 注意这是 Blackwell 架构（sm_120），
-  **必须使用 PyTorch ≥ 2.7 + CUDA 12.8**，旧版 wheel 没有对应 kernel。
-  **不要使用 TensorFlow 1.x 时代的代码**，它在这张卡上无法运行。
+- 本地推理显卡：任意支持 CUDA 的 NVIDIA 显卡。开发机为 RTX 5060 8GB（Blackwell，sm_120），
+  该架构**必须使用 PyTorch ≥ 2.7 + CUDA 12.8**，旧版 wheel 没有对应 kernel。
+  **不要使用 TensorFlow 1.x 时代的代码**，它在新卡上无法运行。

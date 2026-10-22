@@ -183,4 +183,4 @@
 - `.gitignore` 强制忽略 `data/**` 下的用户笔迹数据、模型权重，
   以及 `.cache/glyphs` 下的字形数据（派生自 Arphic PL 字体，不随仓库分发）
 
-[未发布]: https://github.com/Whaoy/HandwritingRobot/commits/main
+[未发布]: https://github.com/ccbda3/HandwritingRobot/commits/main

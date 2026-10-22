@@ -40,7 +40,7 @@
 ## 举报
 
 如遇滥用、骚扰或其他不可接受的行为，请通过仓库的 Issue 或
-[GitHub 私信](https://github.com/Whaoy) 联系维护者。
+[GitHub 私信](https://github.com/ccbda3) 联系维护者。
 所有投诉都会被及时、公正地审查与处理。维护者有义务尊重举报者的隐私与安全。
 
 ## 执行指南

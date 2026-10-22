@@ -186,6 +186,27 @@
 再叠加「已知文本的字数」这一约束，分段就变成受约束的对齐，而不是盲猜。
 实现见 `src/handwriting/segment.py`。
 
+## 图形采集（`contentType: "shape"`）
+
+采集器「图形」模式导出的仍是 `handwriting-capture/2.0`，但内容不是文字，
+而是任意图形（表格、思维导图、示意图、手绘图案）。
+
+| 字段 | 值 | 说明 |
+|---|---|---|
+| `meta.contentType` | `"shape"` | 这一份是图形数据；文字整行为 `"textline"` |
+| `meta.boxAspect` | number | 绘制框宽高比 `w / h`，用于还原图形比例 |
+| `lines[].kind` | `"shape"` | 该行是图形 |
+| `lines[].text` | `""` | 图形没有文本，空字符串合法 |
+| `lines[].charRanges` | 缺省 | 图形不分字，不要填 |
+
+图形与整行在 `Stroke` 层面**完全相同**（都是笔尖轨迹序列），因此同一套
+`stroke / style / gcode` 管线直接可用。读取端 `LineCapture` 把
+`text` 为空且 `kind == "shape"` 的行视为合法，不再报「缺少文本」。
+
+> 非文字的规整内容（表格 / 思维导图）也可以不经采集、直接由
+> `handwriting.shapes` 生成 `StrokeSet`，再经 `handwriting.sheets` 出 G 代码。
+> 见 [ADR-0006](adr/0006-arbitrary-shapes-and-versatile-training.md)。
+
 ## 版本演进规则
 
 - 字段只增不改不删；废弃字段标记 `deprecated` 并保留至少一个大版本

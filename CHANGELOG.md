@@ -25,6 +25,19 @@
 
 ### 新增
 
+- **任意图形内容层**（`src/handwriting/shapes.py`、`src/handwriting/sheets.py`）：
+  管线在 `Stroke` 层本就与内容无关，新增一层把「非文字内容」也变成 `StrokeSet`——
+  几何基元（线/矩形/圆/椭圆/箭头/折线）、`compose_table`（表格）、`compose_mindmap`
+  （思维导图），以及 `svg_to_stroke_set` 通用矢量导入（path/line/polyline/polygon/
+  rect/circle/ellipse，支持相对坐标与椭圆弧）。`ShapeSheet` 按近正方形网格把多个图形
+  摆进 `Page`，复用现有 G 代码与预览出口，因此预览与实机走位一致。
+- **采集器「图形」模式**（`capture/index.html`）：在「单字 / 整行」之外新增「图形」，
+  自由绘制任意图形，导出 `handwriting-capture/2.0` 并标记 `contentType:"shape"`、
+  `kind:"shape"`、`text:""`。`LineCapture` 读取时不再把空文本图形判为错误。
+- **CLI `compose` 子命令**：`compose table --rows --cols [--text]`、
+  `compose mindmap --nodes --edges`、`compose svg --file`，直接输出 G 代码与 SVG 预览。
+- **`StrokeSet.fit_to_box` 支持 `stretch`**：表格 / 思维导图需要撑满单元格时非等比缩放；
+  同时修正「横画（高=0）/ 竖画（宽=0）」被误判为空的问题。
 - **整行采集模式**（`capture/index.html`）：采集器新增「单字 / 整行」切换。
   整行模式在画布上画出**横线与字格**，用户按横线连续书写整行（可连笔），
   导出 `handwriting-capture/2.0`；坐标归一化到**整行方框**、`strokeStartT` 以整行起笔为基准，

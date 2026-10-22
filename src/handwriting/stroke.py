@@ -124,10 +124,16 @@ class StrokeSet:
             max(b[3] for b in boxes),
         )
 
-    def fit_to_box(self, size: float = 1.0, padding: float = 0.05) -> StrokeSet:
-        """等比缩放并居中，使字形恰好装进边长为 ``size`` 的方框。
+    def fit_to_box(
+        self, size: float = 1.0, padding: float = 0.05, stretch: bool = False
+    ) -> StrokeSet:
+        """把笔画缩放进边长为 ``size`` 的方框。
 
-        等比（而非拉伸）是为了保留书写者的真实字形比例，这是风格特征的一部分。
+        ``stretch=False``（默认）：**等比**缩放并居中。用于字形，保留书写者
+        真实字形比例（这是风格特征的一部分）。
+
+        ``stretch=True``：x、y 各自按方框填满，用于表格 / 思维导图这类
+        需要撑满单元格的几何图形（拉伸不会破坏风格，因为本就不是字形）。
         """
         box = self.bbox()
         if box is None:
@@ -137,20 +143,31 @@ class StrokeSet:
         width = max_x - min_x
         height = max_y - min_y
         longest = max(width, height)
+        # 只有「完全退化成一个点」才算空；横画（高=0）、竖画（宽=0）都必须保留，
+        # 否则「一」「丨」这类笔画会在归一化时被整笔丢掉。
         if longest <= 0.0:
             return StrokeSet([], self.char)
 
         target = size * (1.0 - 2.0 * padding)
-        factor = target / longest
-
-        # 先把左上角移到原点，再等比缩放，最后在方框内居中
-        offset_x = -min_x * factor + (size - width * factor) / 2.0
-        offset_y = -min_y * factor + (size - height * factor) / 2.0
+        if not stretch:
+            factor = target / longest
+            sx = sy = factor
+            offset_x = -min_x * sx + (size - width * sx) / 2.0
+            offset_y = -min_y * sy + (size - height * sy) / 2.0
+        else:
+            sx = target / width if width > 0.0 else 1.0
+            sy = target / height if height > 0.0 else 1.0
+            offset_x = (
+                -min_x * sx + size * padding if width > 0.0 else size / 2.0 - min_x * sx
+            )
+            offset_y = (
+                -min_y * sy + size * padding if height > 0.0 else size / 2.0 - min_y * sy
+            )
 
         fitted = []
         for stroke in self.strokes:
             pts = [
-                replace(p, x=p.x * factor + offset_x, y=p.y * factor + offset_y)
+                replace(p, x=p.x * sx + offset_x, y=p.y * sy + offset_y)
                 for p in stroke.points
             ]
             fitted.append(Stroke(pts))

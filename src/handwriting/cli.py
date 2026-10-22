@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -47,6 +48,8 @@ from handwriting.layout import (
 from handwriting.line import LineCapture
 from handwriting.preview import SvgStyle, to_svg
 from handwriting.render import RenderSettings, render_text
+from handwriting.shapes import compose_mindmap, compose_table, svg_to_stroke_set
+from handwriting.sheets import ShapeSheet
 from handwriting.style import (
     LineStyleFeatures,
     StyleFeatures,
@@ -177,6 +180,55 @@ def _build_parser() -> argparse.ArgumentParser:
         "inspect", help="体检采集数据并打印风格特征（单字 1.0 / 整行 2.0 自动识别）"
     )
     inspect.add_argument("path", type=Path, help="采集导出的 JSON 文件")
+
+    # ---- compose：任意图形（表格 / 思维导图 / SVG 导入）-------------------
+    compose = subparsers.add_parser(
+        "compose", help="生成任意图形（表格 / 思维导图 / SVG 导入）的 G 代码"
+    )
+    machine = compose.add_argument_group("机器参数")
+    machine.add_argument("--feed-draw", type=float, default=8000.0, help="书写进给 mm/min")
+    machine.add_argument("--feed-travel", type=float, default=3000.0, help="空行程进给 mm/min")
+    machine.add_argument("--pen-up-z", type=float, default=0.0, help="抬笔 Z 值")
+    machine.add_argument("--pen-down-z", type=float, default=6.0, help="落笔 Z 值")
+    machine.add_argument("--invert-y", action="store_true", help="Y 轴取反（机器 Y+ 朝上时）")
+    machine.add_argument("--spindle", action="store_true", help="用主轴 PWM 抬落笔而非 Z 轴")
+
+    page = compose.add_argument_group("版面")
+    page.add_argument("--mode", choices=["notebook", "grid"], default="grid", help="默认 grid")
+    page.add_argument("--page-width", type=float, default=NOTEBOOK_WIDTH_MM)
+    page.add_argument("--page-height", type=float, default=NOTEBOOK_HEIGHT_MM)
+    page.add_argument("--lines", type=int, default=NOTEBOOK_LINES)
+    page.add_argument("--char-size", type=float, default=0.0, help="每个图形的单元格边长 mm")
+    page.add_argument("--chars-per-line", type=int, default=0, help="每行放几个图形，0 为自动")
+    page.add_argument("--char-gap", type=float, default=3.0)
+    page.add_argument("--line-gap", type=float, default=10.0)
+    page.add_argument("--margin", type=float, default=10.0)
+
+    kind = compose.add_subparsers(dest="kind", required=True)
+    table = kind.add_parser("table", help="表格")
+    table.add_argument("--rows", type=int, required=True)
+    table.add_argument("--cols", type=int, required=True)
+    table.add_argument(
+        "--text",
+        help="单元格文字：行用 ; 分隔，单元格用 , 或制表符（支持中文逗号）分隔",
+    )
+    table.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    table.add_argument("--offline", action="store_true", help="只用本地缓存")
+
+    mind = kind.add_parser("mindmap", help="思维导图")
+    mind.add_argument(
+        "--nodes", required=True, help="节点：id:x,y,w,h,标签;...（坐标为 0~1 归一化）"
+    )
+    mind.add_argument("--edges", required=True, help="连线：a,b;...")
+    mind.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    mind.add_argument("--offline", action="store_true")
+
+    svgc = kind.add_parser("svg", help="导入 SVG 矢量图")
+    svgc.add_argument("--file", type=Path, required=True, help="SVG 文件路径")
+
+    for sub in (table, mind, svgc):
+        sub.add_argument("-o", "--output", type=Path, help="G 代码输出路径")
+        sub.add_argument("--svg", type=Path, help="同时导出 SVG 预览")
 
     return parser
 
@@ -432,6 +484,132 @@ def _cmd_render(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _parse_table_text(text: str) -> list[list[str]]:
+    """行用 ; 分隔，单元格用 , 或制表符（含中文逗号）分隔。"""
+    rows: list[list[str]] = []
+    for row in text.split(";"):
+        row = row.strip()
+        if not row:
+            continue
+        cells = [c.strip() for c in re.split(r"[,，\t]", row) if c.strip()]
+        rows.append(cells)
+    return rows
+
+
+def _parse_mindmap(nodes_str: str, edges_str: str) -> tuple[list, list]:
+    from handwriting.shapes import MindEdge, MindNode
+
+    nodes: list[MindNode] = []
+    for part in nodes_str.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        nid, sep, rest = part.partition(":")
+        if not sep:
+            raise SystemExit(f"节点格式错误（应为 id:x,y,w,h,标签）：{part!r}")
+        vals = rest.split(",", 4)  # x, y, w, h, 标签（标签可含逗号）
+        if len(vals) < 4:
+            raise SystemExit(f"节点格式错误（应为 id:x,y,w,h,标签）：{part!r}")
+        label = vals[4].strip() if len(vals) >= 5 else ""
+        nodes.append(
+            MindNode(
+                id=nid.strip(),
+                x=float(vals[0]),
+                y=float(vals[1]),
+                w=float(vals[2]),
+                h=float(vals[3]),
+                label=label,
+            )
+        )
+
+    edges: list[MindEdge] = []
+    for part in edges_str.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        a, _, b = part.partition(",")
+        edges.append(MindEdge(a.strip(), b.strip()))
+    return nodes, edges
+
+
+def _cmd_compose(args: argparse.Namespace) -> int:
+    # 仅当涉及文字（表格单元格 / 节点标签）时才需要字形数据源
+    source = None
+    if getattr(args, "text", None) or args.kind == "mindmap":
+        source = HanziWriterSource(cache_dir=args.cache_dir, offline=args.offline)
+
+    if args.kind == "table":
+        texts = _parse_table_text(args.text) if args.text else None
+        shapes = [compose_table(args.rows, args.cols, texts, source)]
+    elif args.kind == "mindmap":
+        nodes, edges = _parse_mindmap(args.nodes, args.edges)
+        shapes = [compose_mindmap(nodes, edges, source)]
+    elif args.kind == "svg":
+        if not args.file.is_file():
+            print(f"错误：找不到 SVG 文件 {args.file}")
+            return EXIT_ERROR
+        svg_text = args.file.read_text(encoding="utf-8")
+        shapes = [svg_to_stroke_set(svg_text)]
+    else:  # pragma: no cover - argparse 约束
+        raise SystemExit(f"未知图形类型 {args.kind!r}")
+
+    plot = PlotSettings(
+        pen_up_z=args.pen_up_z,
+        pen_down_z=args.pen_down_z,
+        use_z_axis=not args.spindle,
+        feed_draw=args.feed_draw,
+        feed_travel=args.feed_travel,
+        invert_y=args.invert_y,
+    )
+    layout = LayoutSettings(
+        mode=Mode.NOTEBOOK if args.mode == "notebook" else Mode.GRID,
+        page_width_mm=args.page_width,
+        page_height_mm=args.page_height,
+        char_size_mm=args.char_size,
+        chars_per_line=args.chars_per_line,
+        line_count=args.lines,
+        char_gap_mm=args.char_gap,
+        line_gap_mm=args.line_gap,
+        margin_x_mm=args.margin,
+        margin_y_mm=args.margin,
+    )
+
+    sheet = ShapeSheet(shapes)
+    fitted, page = sheet.layout(layout)
+    gres = glyphs_to_gcode_with_stats(fitted, page, plot)
+    stats = gres.stats
+    program = gres.lines_text()
+    svg = to_svg(fitted, page, SvgStyle())
+
+    print("== 图形合成统计 ==")
+    print(f"图形数      : {sheet.count}")
+    print(f"笔画数      : {stats.stroke_count}")
+    print(f"采样点      : {stats.point_count}")
+    print(f"G 代码行数  : {stats.line_count}")
+    print(f"版面        : {page.width_mm:.1f} × {page.height_mm:.1f} mm")
+    print(f"绘制路径    : {stats.draw_length_mm:.1f} mm")
+    print(f"空行程      : {stats.travel_length_mm:.1f} mm")
+    serial_seconds = stats.line_count / GRBL_LINES_PER_SECOND
+    print(
+        f"串口传输    : {serial_seconds:.1f} s"
+        f"（{stats.line_count} 行 @ {GRBL_LINES_PER_SECOND:.0f} 行/秒）"
+    )
+
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(program, encoding="utf-8")
+        print(f"\n已写入 G 代码：{args.output}")
+    if args.svg is not None:
+        args.svg.parent.mkdir(parents=True, exist_ok=True)
+        args.svg.write_text(svg, encoding="utf-8")
+        print(f"已写入 SVG 预览：{args.svg}")
+    if args.output is None and args.svg is None:
+        print("\n== G 代码 ==")
+        sys.stdout.write(program)
+
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_stdout()
     parser = _build_parser()
@@ -443,6 +621,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_preload(args)
     if args.command == "inspect":
         return _cmd_inspect(args)
+    if args.command == "compose":
+        return _cmd_compose(args)
 
     parser.error(f"未知子命令 {args.command!r}")
     return EXIT_ERROR  # pragma: no cover - argparse 会先退出

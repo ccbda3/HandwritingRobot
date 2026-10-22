@@ -27,6 +27,10 @@
     整行笔迹的「字」分段（抬笔间隔 + 已知字数约束）
 ``line``
     读取整行采集数据集（``handwriting-capture/2.0``）
+``shapes``
+    任意图形内容层（表格 / 思维导图 / SVG 导入）
+``sheets``
+    把若干图形摆上版面并出 G 代码 / 预览
 ``gcode``
     GRBL G 代码生成
 ``cli``
@@ -71,6 +75,20 @@ from handwriting.layout import (
 from handwriting.line import LineCapture, LineSample
 from handwriting.render import RenderResult, RenderSettings, render_text
 from handwriting.segment import DEFAULT_GAP_MS, segment_by_gap, segment_line, stroke_gaps
+from handwriting.shapes import (
+    MindEdge,
+    MindNode,
+    arrow,
+    circle,
+    compose_mindmap,
+    compose_table,
+    ellipse,
+    line_segment,
+    polyline,
+    rect_outline,
+    svg_to_stroke_set,
+)
+from handwriting.sheets import ShapeSheet, compose
 from handwriting.stroke import Point, Stroke, StrokeSet
 from handwriting.style import (
     LINE_CONNECT_MS,
@@ -84,7 +102,7 @@ from handwriting.style import (
     resample,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "CHARACTERS",
@@ -107,29 +125,41 @@ __all__ = [
     "LineCapture",
     "LineSample",
     "LineStyleFeatures",
+    "MindEdge",
+    "MindNode",
     "Mode",
     "Page",
     "PlotSettings",
     "Point",
     "RenderResult",
     "RenderSettings",
+    "ShapeSheet",
     "Stroke",
     "StrokeSet",
     "StyleFeatures",
     "__version__",
+    "arrow",
     "char_origin",
+    "circle",
+    "compose",
+    "compose_mindmap",
+    "compose_table",
     "compute",
     "coverage_report",
     "distance",
+    "ellipse",
     "extract",
     "extract_line",
     "glyphs_to_gcode_with_stats",
+    "line_segment",
     "load_glyphs",
     "mean_features",
     "mean_line_features",
     "next_char",
     "order_by_coverage",
     "page_size",
+    "polyline",
+    "rect_outline",
     "render_text",
     "resample",
     "resolve_char_size",
@@ -138,4 +168,5 @@ __all__ = [
     "segment_line",
     "stroke_gaps",
     "strokes_to_gcode",
+    "svg_to_stroke_set",
 ]

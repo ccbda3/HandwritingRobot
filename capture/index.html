@@ -144,6 +144,7 @@
   <span class="modes" id="modes">
     <button id="modeChar" class="active">单字</button>
     <button id="modeLine">整行</button>
+    <button id="modeShape">图形</button>
   </span>
   <span class="badge" id="bProgress">0 / 150</span>
   <span class="badge" id="bPen">输入设备：等待</span>
@@ -295,6 +296,10 @@ function layout(){
     var charSize = Math.max(26, Math.min(availW / n, availH / LINE_ASPECT));
     w = Math.round(charSize * n);
     h = Math.round(charSize * LINE_ASPECT);
+  } else if(state.mode === "shape"){
+    // 自由图形：占满整个舞台，尽量给足绘制面积
+    w = Math.max(220, Math.round(availW));
+    h = Math.max(160, Math.round(availH));
   } else {
     var s = Math.max(160, Math.min(availW, availH));
     w = s; h = s;
@@ -316,7 +321,17 @@ function layout(){
 function drawGrid(){
   var b = state.box;
   ctx.save();
-  if(state.mode === "line"){
+  if(state.mode === "shape"){
+    // 自由图形：只画边框 + 淡网格作参考，不限制书写结构
+    ctx.strokeStyle = "#dcdcdc"; ctx.lineWidth = 1;
+    ctx.strokeRect(b.x + .5, b.y + .5, b.w - 1, b.h - 1);
+    ctx.strokeStyle = "#f2f2f2"; ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for(var gx=1; gx<6; gx++){ var X = b.x + b.w*gx/6; ctx.moveTo(X, b.y); ctx.lineTo(X, b.y+b.h); }
+    for(var gy=1; gy<6; gy++){ var Y = b.y + b.h*gy/6; ctx.moveTo(b.x, Y); ctx.lineTo(b.x+b.w, Y); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else if(state.mode === "line"){
     var n = lineCharCount();
     var cs = b.w / n;                       // 单字宽
     var baseY = b.y + b.h * LINE_BASELINE;  // 基线：字压其上
@@ -569,7 +584,7 @@ function renderMilestones(){
 }
 
 function refreshProgress(){
-  var isLine = state.mode === "line";
+  var isLine = state.mode === "line" || state.mode === "shape";
   var items = isLine ? state.lines : state.samples;
   var done = items.length;
 
@@ -641,6 +656,7 @@ function advance(){
 }
 
 function commit(skipped){
+  if(state.mode === "shape"){ commitShape(); return; }
   if(state.mode === "line"){ commitLine(); return; }
 
   var total = 0;
@@ -699,15 +715,44 @@ function commitLine(){
   }
 }
 
+/* ---------- 图形模式：提交一个任意图形 ---------- */
+function commitShape(){
+  var total = 0;
+  for(var i=0;i<state.strokes.length;i++) total += state.strokes[i].points.length;
+  if(total === 0){ toast("还没有内容，先画点东西"); return; }
+
+  state.lines.push({
+    index: state.lines.length,
+    text: "",
+    kind: "shape",
+    strokes: state.strokes.map(function(s){ return s.points; }),
+    strokeStartT: state.strokes.map(function(s){ return s.startT; }),
+    rate: Math.round(state.device.rate) || 0,
+    pressure: state.device.pressure === true
+  });
+  document.getElementById("bSaved").textContent = "未备份";
+  document.getElementById("bSaved").className = "badge warn";
+  toast("已记录图形 #" + state.lines.length + "（" + state.strokes.length + " 笔）");
+
+  clearCurrent();
+  refreshProgress();
+  if(state.lines.length % 10 === 0){
+    toast("已画 " + state.lines.length + " 个图形，建议导出一份备份");
+  }
+}
+
 function buildPayload(){
-  if(state.mode === "line"){
+  if(state.mode === "line" || state.mode === "shape"){
+    var isShape = state.mode === "shape";
     return {
       format: "handwriting-capture/2.0",
       meta: {
         device: state.device.type,
         pressureSupported: state.device.pressure === true,
         samplingHz: Math.round(state.device.rate) || null,
+        contentType: isShape ? "shape" : "textline",
         lineCount: state.lines.length,
+        boxAspect: +(state.box.w / state.box.h).toFixed(4),
         coordSystem: "归一化到整行方框，原点在方框左上角，x 向右，y 向下，取值 0~1",
         baselineRatio: LINE_BASELINE,
         createdAt: new Date().toISOString()
@@ -716,6 +761,7 @@ function buildPayload(){
         return {
           index: l.index,
           text: l.text,
+          kind: l.kind,
           strokeCount: l.strokes.length,
           rate: l.rate,
           pressure: l.pressure,
@@ -772,16 +818,17 @@ function stamp(){
 }
 
 function exportJSON(){
-  var n = state.mode === "line" ? state.lines.length : state.samples.length;
+  var isLines = state.mode === "line" || state.mode === "shape";
+  var n = isLines ? state.lines.length : state.samples.length;
   if(!n){ toast("还没有采集到数据"); return; }
   download("handwriting-" + stamp() + ".json", JSON.stringify(buildPayload(), null, 1), "application/json");
   document.getElementById("bSaved").textContent = "已备份";
   document.getElementById("bSaved").className = "badge ok";
-  toast("已导出 " + n + (state.mode === "line" ? " 行" : " 个字"));
+  toast("已导出 " + n + (isLines ? (state.mode === "shape" ? " 个图形" : " 行") : " 个字"));
 }
 
 function exportCSV(){
-  if(state.mode === "line"){
+  if(state.mode === "line" || state.mode === "shape"){
     if(!state.lines.length){ toast("还没有采集到数据"); return; }
     var lrows = ["line_index,text,stroke_id,point_id,x,y,pressure,t_ms,stroke_start_ms"];
     state.lines.forEach(function(l){
@@ -815,17 +862,22 @@ function setMode(m){
   state.mode = m;
   state.strokes = []; state.current = null; state.charStartTs = null;
 
+  var isLines = m === "line" || m === "shape";
   document.getElementById("modeChar").className = m === "char" ? "active" : "";
   document.getElementById("modeLine").className = m === "line" ? "active" : "";
+  document.getElementById("modeShape").className = m === "shape" ? "active" : "";
   document.getElementById("charTarget").style.display = m === "char" ? "" : "none";
   document.getElementById("lineTarget").style.display = m === "line" ? "" : "none";
   document.getElementById("milestones").style.display = m === "char" ? "" : "none";
   document.getElementById("btnSkip").style.display = m === "char" ? "" : "none";
   document.getElementById("btnNext").style.display = m === "char" ? "" : "none";
-  document.getElementById("btnLineDone").style.display = m === "line" ? "" : "none";
-  document.getElementById("hint").textContent = m === "line"
-    ? "按横线写整行，可连笔；写完点「完成本行」"
-    : "在白色方格里用笔写，写完点「下一字」";
+  document.getElementById("btnLineDone").style.display = isLines ? "" : "none";
+  document.getElementById("btnLineDone").textContent = m === "shape" ? "完成图形 ▶" : "完成本行 ▶";
+  document.getElementById("hint").textContent = m === "shape"
+    ? "自由绘制任意图形（表格 / 思维导图 / 示意图），写完点「完成图形」"
+    : (m === "line"
+      ? "按横线写整行，可连笔；写完点「完成本行」"
+      : "在白色方格里用笔写，写完点「下一字」");
 
   document.getElementById("lineCount").textContent = lineTextValue().length + " 字";
   layout();
@@ -837,12 +889,13 @@ document.getElementById("btnUndo").onclick = undo;
 document.getElementById("btnClear").onclick = clearCurrent;
 document.getElementById("btnSkip").onclick = function(){ commit(true); };
 document.getElementById("btnNext").onclick = function(){ commit(false); };
-document.getElementById("btnLineDone").onclick = commitLine;
+document.getElementById("btnLineDone").onclick = function(){ commit(false); };
 document.getElementById("btnExport").onclick = exportJSON;
 document.getElementById("btnCsv").onclick = exportCSV;
 
 document.getElementById("modeChar").onclick = function(){ setMode("char"); };
 document.getElementById("modeLine").onclick = function(){ setMode("line"); };
+document.getElementById("modeShape").onclick = function(){ setMode("shape"); };
 
 var lineInput = document.getElementById("lineText");
 lineInput.oninput = function(){

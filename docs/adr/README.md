@@ -14,6 +14,7 @@
 | [0003](0003-cpp-core-python-for-training.md) | C++ 核心库 + Python 仅用于训练 | 已接受 |
 | [0004](0004-license-and-third-party-data.md) | 许可策略与第三方数据合规 | 已接受 |
 | [0005](0005-progressive-guided-collection.md) | 渐进式引导采集，而非实时增量训练 | 已接受 |
+| [0006](0006-arbitrary-shapes-and-versatile-training.md) | 任意图形内容层与「全能」训练口径 | 已接受 |
 
 ## 模板
 

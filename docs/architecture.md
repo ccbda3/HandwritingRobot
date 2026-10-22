@@ -89,11 +89,23 @@ C++ 侧已从 `ostringstream` 换成 `snprintf`（37 ms ← 63 ms），仍有优
                                        GRBL 写字机器人
 ```
 
+### 任意图形（内容层）
+
+管线在 `Stroke` 层就是**图形无关**的：`StrokeSet`（归一化 0~1、y 向下）是唯一契约。
+因此表格、思维导图、SVG 路径与「一个汉字」在下游没有区别：
+
+- `shapes.py`：几何基元 + `compose_table` / `compose_mindmap` + `svg_to_stroke_set`（通用矢量导入）
+- `sheets.py`：`ShapeSheet` 把若干图形按网格摆进 `Page`，复用 `gcode` / `preview`
+
+这样「不只是字，任何奇形怪状都能写」无需改动已验证的渲染与 G 代码链路。
+见 [ADR-0006](adr/0006-arbitrary-shapes-and-versatile-training.md)。
+
 ## 模块状态
 
 | 模块 | 状态 | 位置 |
 |---|---|---|
 | 笔迹采集器 | 可用 | `capture/index.html` |
+| 任意图形内容层（表格 / 思维导图 / SVG） | 可用 | `src/handwriting/shapes.py`、`sheets.py` |
 | 轨迹数据结构 | 可用（C++ + Python 双实现） | `core/`、`src/handwriting/stroke.py` |
 | 数据集读取与质检 | 可用 | `src/handwriting/dataset.py` |
 | G 代码生成 | 可用（基础版） | `core/`、`src/handwriting/gcode.py` |

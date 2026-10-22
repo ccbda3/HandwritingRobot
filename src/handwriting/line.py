@@ -40,6 +40,8 @@ class LineSample:
     """每个字占用的笔画区间 ``[start, end)``，与 ``text`` 逐字对应。缺失时为 None。"""
     rate: int = 0
     pressure: bool = False
+    kind: str = ""
+    """``"shape"`` 表示这是自由图形（表格 / 思维导图等），``text`` 为空属正常。"""
 
     @property
     def char_count(self) -> int:
@@ -133,6 +135,7 @@ class LineCapture:
                     char_ranges=([(int(a), int(b)) for a, b in raw_ranges] if raw_ranges else None),
                     rate=int(item.get("rate", 0) or 0),
                     pressure=bool(item.get("pressure", False)),
+                    kind=str(item.get("kind", "") or ""),
                 )
             )
         return cls(meta=CaptureMeta.from_dict(payload.get("meta", {})), lines=lines, source=source)
@@ -164,7 +167,7 @@ class LineCapture:
             )
 
         for line in self.lines:
-            if not line.text:
+            if not line.text and line.kind != "shape":
                 problems.append(f"第 {line.index} 行缺少文本")
             if line.stroke_count == 0:
                 problems.append(f"第 {line.index} 行没有笔画")

@@ -157,19 +157,12 @@ class StrokeSet:
         else:
             sx = target / width if width > 0.0 else 1.0
             sy = target / height if height > 0.0 else 1.0
-            offset_x = (
-                -min_x * sx + size * padding if width > 0.0 else size / 2.0 - min_x * sx
-            )
-            offset_y = (
-                -min_y * sy + size * padding if height > 0.0 else size / 2.0 - min_y * sy
-            )
+            offset_x = -min_x * sx + size * padding if width > 0.0 else size / 2.0 - min_x * sx
+            offset_y = -min_y * sy + size * padding if height > 0.0 else size / 2.0 - min_y * sy
 
         fitted = []
         for stroke in self.strokes:
-            pts = [
-                replace(p, x=p.x * sx + offset_x, y=p.y * sy + offset_y)
-                for p in stroke.points
-            ]
+            pts = [replace(p, x=p.x * sx + offset_x, y=p.y * sy + offset_y) for p in stroke.points]
             fitted.append(Stroke(pts))
         return StrokeSet(fitted, self.char)
 

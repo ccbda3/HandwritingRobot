@@ -114,11 +114,7 @@ def test_svg_cubic_bezier_sampled() -> None:
 
 
 def test_svg_namespaced_and_bad_input() -> None:
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg">'
-        '<rect x="0" y="0" width="5" height="5"/>'
-        "</svg>"
-    )
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="5" height="5"/></svg>'
     ss = svg_to_stroke_set(svg)
     assert ss.stroke_count == 1
 

@@ -61,7 +61,9 @@ def rect_outline(x: float, y: float, w: float, h: float) -> StrokeSet:
     )
 
 
-def _ellipse_points(cx: float, cy: float, rx: float, ry: float, segments: int = 64) -> list[tuple[float, float]]:
+def _ellipse_points(
+    cx: float, cy: float, rx: float, ry: float, segments: int = 64
+) -> list[tuple[float, float]]:
     pts: list[tuple[float, float]] = []
     for i in range(segments + 1):
         a = 2.0 * math.pi * i / segments
@@ -99,9 +101,7 @@ def polyline(points: Sequence[tuple[float, float]]) -> StrokeSet:
 # ---------------------------------------------------------------------------
 # 文本落入方框（供表格 / 思维导图单元格复用）
 # ---------------------------------------------------------------------------
-def _text_in_box(
-    text: str, box: tuple[float, float, float, float], source: Any
-) -> StrokeSet:
+def _text_in_box(text: str, box: tuple[float, float, float, float], source: Any) -> StrokeSet:
     """把 ``text`` 渲染后放进 ``(x, y, w, h)`` 方框，左上对齐、等比缩放。
 
     每个字符各自归一化成边长 ``glyph_size`` 的正方形再左到右排布；多行用换行符。
@@ -158,8 +158,8 @@ def compose_table(
         raise ValueError(f"padding 必须落在 (0, 0.45)，收到 {padding}")
 
     x0, y0 = padding, padding
-    w = (1.0 - 2.0 * padding)
-    h = (1.0 - 2.0 * padding)
+    w = 1.0 - 2.0 * padding
+    h = 1.0 - 2.0 * padding
     cw, ch = w / cols, h / rows
 
     strokes: list[Stroke] = list(rect_outline(x0, y0, w, h).strokes)
@@ -270,7 +270,12 @@ def _parse_points(s: str | None) -> list[tuple[float, float]]:
 
 
 def _bezier(
-    x0: float, y0: float, p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float], n: int = 20
+    x0: float,
+    y0: float,
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+    n: int = 20,
 ) -> list[tuple[float, float]]:
     out: list[tuple[float, float]] = []
     for i in range(1, n + 1):
@@ -369,7 +374,7 @@ def _parse_path(d: str) -> list[list[tuple[float, float]]]:
     for idx, m in enumerate(commands):
         cmd = m.group(1)
         end = commands[idx + 1].start() if idx + 1 < len(commands) else len(d)
-        nums = [float(x) for x in _NUM.findall(d[m.end():end])]
+        nums = [float(x) for x in _NUM.findall(d[m.end() : end])]
         upper = cmd.upper()
         rel = cmd.islower()
 
@@ -513,9 +518,7 @@ def svg_to_stroke_set(svg_text: str, padding: float = 0.02) -> StrokeSet:
     if not polylines:
         return StrokeSet([], "")
 
-    strokes = [
-        Stroke([Point(x, y, 0.5, 0) for x, y in pl]) for pl in polylines if len(pl) >= 1
-    ]
+    strokes = [Stroke([Point(x, y, 0.5, 0) for x, y in pl]) for pl in polylines if len(pl) >= 1]
     return StrokeSet(strokes, "").fit_to_box(1.0, padding=padding)
 
 

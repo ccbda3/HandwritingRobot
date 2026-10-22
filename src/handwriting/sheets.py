@@ -68,7 +68,9 @@ class ShapeSheet:
             fitted.append(shape.fit_to_box(1.0, padding=0.04, stretch=True))
         return fitted, page
 
-    def to_gcode(self, plot: PlotSettings | None = None, layout: LayoutSettings | None = None) -> str:
+    def to_gcode(
+        self, plot: PlotSettings | None = None, layout: LayoutSettings | None = None
+    ) -> str:
         fitted, page = self.layout(layout)
         return glyphs_to_gcode_with_stats(fitted, page, plot).lines_text()
 

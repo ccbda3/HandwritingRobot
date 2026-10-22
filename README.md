@@ -10,6 +10,19 @@
               (Python)        (C++ core)      (C++ core)
 ```
 
+## 任意图形
+
+不只是写字：**表格、思维导图、导入的 SVG** 在管线里都只是 `StrokeSet`，
+和「一个汉字」走同一条版面 → G 代码 → 机器链路。
+
+![表格 / 思维导图 / SVG 导入示例](docs/assets/shapes-demo.svg)
+
+```bash
+handwriting compose table   --rows 3 --cols 4 -o table.nc
+handwriting compose mindmap --nodes "a:0.2,0.5,0.24,0.16;b:0.7,0.3,0.2,0.14" --edges "a,b"
+handwriting compose svg     --file drawing.svg --svg preview.svg
+```
+
 ## 当前状态
 
 **Pre-Alpha。** 采集链路、字形 → G 代码链路已跑通，风格模型尚未开始。

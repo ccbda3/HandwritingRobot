@@ -202,6 +202,75 @@ if(_params.get('play') === '1'){ document.getElementById('play').click(); }
 </html>"""
 
 
+STATIC_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>风格模型 · 学习效果（静态对比）</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#2a2f3a;--text:#e6e6e6;--dim:#9aa0a6;--accent:#67d4ff}
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  h1{font-size:18px;font-weight:500;margin:0 0 6px}
+  p{color:var(--dim);font-size:13px;margin:0 0 18px;line-height:1.6}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:18px}
+  .pair{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .ch{font-size:15px;color:var(--accent);margin:0 0 8px 4px}
+  .panels{display:flex;gap:10px}
+  .panel{flex:1;background:#fff;border-radius:10px;padding:8px}
+  .cap{font-size:12px;color:#666;text-align:center;margin-bottom:4px}
+  .panel svg{display:block;width:100%;height:auto}
+</style>
+</head>
+<body>
+<h1>风格模型 · 学习效果（静态对比）</h1>
+<p>每个字左边是标准骨架，右边是模型生成。重点看倾斜、线条粗细（笔压）与笔画弧度。合成风格、训练集内字形，非个人笔迹。</p>
+<div class="grid">__CARDS__</div>
+</body>
+</html>"""
+
+
+def _panel_svg(stroke_set) -> str:
+    from handwriting.layout import Cell, Page
+    from handwriting.preview import SvgStyle, to_svg
+
+    page = Page(
+        width_mm=100,
+        height_mm=100,
+        chars_per_line=1,
+        cells=[Cell(0, 0, 100, 100, 0, 0)],
+    )
+    svg = to_svg(
+        [stroke_set],
+        page,
+        SvgStyle(
+            show_grid=False,
+            show_rules=False,
+            pressure_width=0.6,
+            base_width=1.1,
+            ink="#141414",
+        ),
+    )
+    return svg.replace(
+        'width="400" height="400"',
+        'width="100%" style="display:block;width:100%;height:auto"',
+        1,
+    )
+
+
+def _static_html(rendered: dict[str, tuple]) -> str:
+    cards = []
+    for char, (original, stylized) in rendered.items():
+        cards.append(
+            f'<section class="pair"><div class="ch">{char}</div>'
+            f'<div class="panels">'
+            f'<div class="panel"><div class="cap">标准骨架</div>{_panel_svg(original)}</div>'
+            f'<div class="panel"><div class="cap">模型生成</div>{_panel_svg(stylized)}</div>'
+            f"</div></section>"
+        )
+    return STATIC_TEMPLATE.replace("__CARDS__", "\n".join(cards))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成风格模型对比页")
     parser.add_argument("--model", type=Path, default=Path("data/exports/style-model.pt"))
@@ -209,6 +278,11 @@ def main() -> int:
     parser.add_argument("--chars", default=None, help="要展示的字；默认取字形缓存里的全部")
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache/glyphs"))
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--static",
+        action="store_true",
+        help="输出无 JS 的静态对比页（预览环境不跑动画时用）",
+    )
     args = parser.parse_args()
 
     model, config, _meta = load_checkpoint(args.model, args.device)
@@ -216,6 +290,7 @@ def main() -> int:
     chars = args.chars or _cached_chars(args.cache_dir)
 
     data: dict[str, dict] = {}
+    rendered: dict[str, tuple] = {}
     for char in chars:
         result = render_text(char, source=source, chars_per_line=0)
         if result.is_empty:
@@ -223,15 +298,20 @@ def main() -> int:
         original = result.rows[0][0]
         stylized = stylize_stroke_set(model, config, original)
         data[char] = {"original": _pack(original), "stylized": _pack(stylized)}
+        rendered[char] = (original, stylized)
 
-    if not data:
+    if not rendered:
         print("没有可展示的字形，请检查字形缓存")
         return 1
 
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(TEMPLATE.replace("__DATA__", payload), encoding="utf-8")
-    print(f"已生成 {args.out}（{len(data)} 个字，{len(payload)} 字节）")
+    if args.static:
+        args.out.write_text(_static_html(rendered), encoding="utf-8")
+        print(f"已生成静态对比页 {args.out}（{len(rendered)} 个字）")
+    else:
+        payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        args.out.write_text(TEMPLATE.replace("__DATA__", payload), encoding="utf-8")
+        print(f"已生成交互对比页 {args.out}（{len(data)} 个字，{len(payload)} 字节）")
     return 0
 
 

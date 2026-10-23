@@ -51,6 +51,9 @@ handwriting train --data capture.json -o data/exports/style-model.pt
 # 生成
 handwriting stylize "永" --model data/exports/style-model.pt --offline -o out.nc --svg out.svg
 handwriting stylize --svg-file drawing.svg --model data/exports/style-model.pt --svg out.svg
+
+# 交互对比页（标准骨架 vs 模型生成，带「笔画演示」动画）
+python scripts/make_style_compare.py --model data/exports/style-model.pt
 ```
 
 ## 限制（v0 明确不做的事）

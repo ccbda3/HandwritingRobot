@@ -109,7 +109,7 @@ C++ 侧已从 `ostringstream` 换成 `snprintf`（37 ms ← 63 ms），仍有优
 | 轨迹数据结构 | 可用（C++ + Python 双实现） | `core/`、`src/handwriting/stroke.py` |
 | 数据集读取与质检 | 可用 | `src/handwriting/dataset.py` |
 | G 代码生成 | 可用（基础版） | `core/`、`src/handwriting/gcode.py` |
-| 笔迹风格模型 | 未开始 | 计划 `src/handwriting/model/` |
+| 笔迹风格模型 v0 | 可用（残差 MDN，需 torch） | `src/handwriting/model/` |
 | 运动约束优化 | 未开始（论文核心） | 计划 `core/src/optimize.cpp` |
 | Qt 桌面 UI | 骨架 | `app/` |
 | 串口流式发送 | 未开始 | 计划 `core/src/grbl_stream.cpp` |

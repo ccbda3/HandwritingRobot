@@ -25,6 +25,14 @@
 
 ### 新增
 
+- **笔迹风格模型 v0**（`src/handwriting/model/`）：把每一笔拆成「中心线 + 残差」，
+  用混合密度网络（MDN）学习残差与笔压的分布，再作用到任意中心线（字形骨架 / SVG 路径）。
+  含训练循环（NLL + 笔压 NLL、warmup+cosine、梯度裁剪）、合成数据与字形基准数据、
+  检查点、生成接口。需要 `pip install -e ".[train]"`（torch / numpy）。
+- **CLI `train` / `stylize`**：`train` 支持 `--data`（真实采集）/`--chars`（字形基准）/
+  合成曲线三种数据源；`stylize` 支持文本或 `--svg-file` 图形，默认取混合均值，
+  `--sample` 逐点随机。
+- **`train` optional extra**（`pyproject.toml`）：`numpy>=1.26`、`torch>=2.7`。
 - **任意图形内容层**（`src/handwriting/shapes.py`、`src/handwriting/sheets.py`）：
   管线在 `Stroke` 层本就与内容无关，新增一层把「非文字内容」也变成 `StrokeSet`——
   几何基元（线/矩形/圆/椭圆/箭头/折线）、`compose_table`（表格）、`compose_mindmap`

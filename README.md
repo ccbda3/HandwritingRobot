@@ -42,8 +42,33 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 | Qt 桌面 UI | **可用**（参数面板 + 实时预览 + 导出 + **串口直连书写**） |
 | 串口 / GRBL 通信（C++ 核心） | 可用（流控、状态机、安全检查，118 项断言覆盖） |
 | 工作区标定（软限位） | 可用（4 步向导 + 示意图 + 越界保护） |
-| 笔迹风格模型 | 未开始 |
+| 笔迹风格模型 v0（残差 MDN，需 torch） | 可用 |
 | 运动约束优化（论文核心） | 未开始 |
+
+## 风格模型 v0（可选，需要 torch）
+
+默认输出是**标准骨架**，不是你本人的笔迹。风格模型 v0 是一个可训练的基线：
+把每一笔拆成「中心线（结构）+ 残差（风格）」，用混合密度网络（MDN）
+学习残差与笔压的分布，再作用到任意中心线上。
+
+```bash
+pip install -e ".[train]"
+
+# 没有数位板时：用本地字形骨架 + 合成风格自测
+handwriting train --chars "不八啼处字春晓永法眠觉闻鸟" --offline \
+  -o data/exports/style-model.pt
+
+# 用模型生成（默认取混合均值；加 --sample 可逐点随机）
+handwriting stylize "永" --model data/exports/style-model.pt --offline \
+  -o out.nc --svg out.svg
+
+# 任意图形也能加风格
+handwriting stylize --svg-file drawing.svg --model data/exports/style-model.pt --svg out.svg
+```
+
+**边界**：v0 学的是「相对中心线的局部风格」（倾斜、提按、抖动），
+不是完整的字形风格迁移；真实个人风格需要数位板数据，以及把采集笔画与
+标准骨架做对齐（下一步）。设计与限制见 [docs/model.md](docs/model.md)。
 
 ## 快速开始
 

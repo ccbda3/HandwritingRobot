@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "handwriting-robot"
-version = "0.1.0"
+version = "0.5.0"
 description = "学习个人笔迹风格，生成带书写时序的笔画轨迹并导出 GRBL G 代码"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -29,6 +29,10 @@ dev = [
   "pytest-cov>=6.0",
   "ruff>=0.8",
   "pre-commit>=4.0",
+]
+train = [
+  "numpy>=1.26",
+  "torch>=2.7",
 ]
 
 [project.scripts]

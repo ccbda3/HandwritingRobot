@@ -230,6 +230,64 @@ def _build_parser() -> argparse.ArgumentParser:
         sub.add_argument("-o", "--output", type=Path, help="G 代码输出路径")
         sub.add_argument("--svg", type=Path, help="同时导出 SVG 预览")
 
+    # ---- train：训练风格模型 ------------------------------------------------
+    train_p = subparsers.add_parser("train", help="训练风格模型（不提供数据时用合成笔迹自测）")
+    train_p.add_argument("--data", type=Path, help="整行采集 JSON（2.0）；不填则用合成数据")
+    train_p.add_argument(
+        "--chars",
+        help="用字形骨架做基准（需本地缓存），如 '永西叶'；比随机曲线更接近真实笔画",
+    )
+    train_p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    train_p.add_argument("--offline", action="store_true")
+    train_p.add_argument("--samples", type=int, default=300, help="合成笔画数量")
+    train_p.add_argument("--epochs", type=int, default=300)
+    train_p.add_argument("--hidden", type=int, default=128)
+    train_p.add_argument("--mixtures", type=int, default=5)
+    train_p.add_argument("--n-points", type=int, default=48)
+    train_p.add_argument("--smooth", type=int, default=5)
+    train_p.add_argument("--lr", type=float, default=1e-3)
+    train_p.add_argument("--seed", type=int, default=0)
+    train_p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    train_p.add_argument("--out", type=Path, default=Path("data/exports/style-model.pt"))
+
+    # ---- stylize：用模型生成 ------------------------------------------------
+    styl = subparsers.add_parser("stylize", help="用训练好的风格模型生成笔迹")
+    styl.add_argument("text", nargs="?", help="要书写的文本")
+    styl.add_argument("-f", "--file", type=Path, help="从文件读取文本")
+    styl.add_argument("--model", type=Path, required=True, help="模型检查点 .pt")
+    styl.add_argument("--svg-file", type=Path, help="改为给一个 SVG 图形加风格")
+    styl.add_argument("-o", "--output", type=Path, help="G 代码输出路径")
+    styl.add_argument("--svg", type=Path, help="同时导出 SVG 预览")
+    styl.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    styl.add_argument(
+        "--sample",
+        action="store_true",
+        help="逐点随机采样（默认取混合均值，更平滑可复现）",
+    )
+
+    s_page = styl.add_argument_group("版面")
+    s_page.add_argument("--mode", choices=["notebook", "grid"], default="notebook")
+    s_page.add_argument("--page-width", type=float, default=NOTEBOOK_WIDTH_MM)
+    s_page.add_argument("--page-height", type=float, default=NOTEBOOK_HEIGHT_MM)
+    s_page.add_argument("--lines", type=int, default=NOTEBOOK_LINES)
+    s_page.add_argument("--char-size", type=float, default=0.0)
+    s_page.add_argument("--chars-per-line", type=int, default=0)
+    s_page.add_argument("--char-gap", type=float, default=3.0)
+    s_page.add_argument("--line-gap", type=float, default=10.0)
+    s_page.add_argument("--margin", type=float, default=10.0)
+
+    s_machine = styl.add_argument_group("机器参数")
+    s_machine.add_argument("--feed-draw", type=float, default=8000.0)
+    s_machine.add_argument("--feed-travel", type=float, default=3000.0)
+    s_machine.add_argument("--pen-up-z", type=float, default=0.0)
+    s_machine.add_argument("--pen-down-z", type=float, default=6.0)
+    s_machine.add_argument("--invert-y", action="store_true")
+    s_machine.add_argument("--spindle", action="store_true")
+
+    s_source = styl.add_argument_group("字形数据源")
+    s_source.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    s_source.add_argument("--offline", action="store_true")
+
     return parser
 
 
@@ -610,6 +668,167 @@ def _cmd_compose(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _resolve_device(value: str) -> str:
+    from handwriting.model.train import default_device
+
+    return default_device() if value == "auto" else value
+
+
+def _cmd_train(args: argparse.Namespace) -> int:
+    from handwriting.model.data import build_examples
+    from handwriting.model.synthetic import synthetic_pairs
+    from handwriting.model.train import TrainConfig, save_checkpoint, train
+
+    if args.data is not None:
+        if not args.data.is_file():
+            print(f"错误：找不到数据文件 {args.data}")
+            return EXIT_ERROR
+        from handwriting.line import LineCapture
+
+        capture = LineCapture.load(args.data)
+        strokes = [stroke for line in capture.lines for stroke in line.strokes]
+        examples = build_examples(strokes, args.n_points, args.smooth)
+        source_label = str(args.data)
+    elif args.chars:
+        from handwriting.glyph import HanziWriterSource
+        from handwriting.model.synthetic import glyph_pairs
+
+        glyph_source = HanziWriterSource(cache_dir=args.cache_dir, offline=args.offline)
+        pairs = glyph_pairs(args.chars, source=glyph_source, n_points=args.n_points, seed=args.seed)
+        examples = build_examples(
+            [styled for _, styled in pairs],
+            args.n_points,
+            args.smooth,
+            centerlines=[base for base, _ in pairs],
+        )
+        source_label = f"glyphs:{args.chars}"
+    else:
+        pairs = synthetic_pairs(count=args.samples, n_points=args.n_points, seed=args.seed)
+        examples = build_examples(
+            [styled for _, styled in pairs],
+            args.n_points,
+            args.smooth,
+            centerlines=[base for base, _ in pairs],
+        )
+        source_label = "synthetic"
+
+    if not examples:
+        print("错误：没有可用的训练样本")
+        return EXIT_ERROR
+
+    config = TrainConfig(
+        n_points=args.n_points,
+        smooth_window=args.smooth,
+        hidden=args.hidden,
+        mixtures=args.mixtures,
+        epochs=args.epochs,
+        lr=args.lr,
+        seed=args.seed,
+        device=_resolve_device(args.device),
+    )
+    print(f"训练样本：{len(examples)} 笔（来源：{source_label}）")
+    print(f"设备：{config.device}  轮数：{config.epochs}")
+
+    every = max(1, config.epochs // 10)
+
+    def progress(epoch: int, loss: float) -> None:
+        if epoch == 0 or (epoch + 1) % every == 0 or epoch == config.epochs - 1:
+            print(f"  epoch {epoch + 1:4d}/{config.epochs}  loss {loss:.4f}")
+
+    model, history = train(examples, config, progress=progress)
+    path = save_checkpoint(
+        model,
+        config,
+        args.out,
+        meta={"source": source_label, "examples": len(examples)},
+    )
+    print(f"损失：{history[0]:.4f} → {history[-1]:.4f}")
+    print(f"已写入模型：{path}")
+    return EXIT_OK
+
+
+def _cmd_stylize(args: argparse.Namespace) -> int:
+    from handwriting.model.generate import stylize_stroke_set
+    from handwriting.model.train import load_checkpoint
+
+    if not args.model.is_file():
+        print(f"错误：找不到模型 {args.model}")
+        return EXIT_ERROR
+
+    device = _resolve_device(args.device)
+    model, config, _meta = load_checkpoint(args.model, device)
+
+    plot = PlotSettings(
+        pen_up_z=args.pen_up_z,
+        pen_down_z=args.pen_down_z,
+        use_z_axis=not args.spindle,
+        feed_draw=args.feed_draw,
+        feed_travel=args.feed_travel,
+        invert_y=args.invert_y,
+    )
+    layout = LayoutSettings(
+        mode=Mode.NOTEBOOK if args.mode == "notebook" else Mode.GRID,
+        page_width_mm=args.page_width,
+        page_height_mm=args.page_height,
+        char_size_mm=args.char_size,
+        chars_per_line=args.chars_per_line,
+        line_count=args.lines,
+        char_gap_mm=args.char_gap,
+        line_gap_mm=args.line_gap,
+        margin_x_mm=args.margin,
+        margin_y_mm=args.margin,
+    )
+
+    if args.svg_file is not None:
+        if not args.svg_file.is_file():
+            print(f"错误：找不到 SVG 文件 {args.svg_file}")
+            return EXIT_ERROR
+        from handwriting.shapes import svg_to_stroke_set
+        from handwriting.sheets import ShapeSheet
+
+        target = svg_to_stroke_set(args.svg_file.read_text(encoding="utf-8"))
+        stylized = stylize_stroke_set(model, config, target, sample=args.sample)
+        fitted, page = ShapeSheet([stylized]).layout(layout)
+        gres = glyphs_to_gcode_with_stats(fitted, page, plot)
+        svg = to_svg(fitted, page, SvgStyle())
+    else:
+        text = _read_text(args)
+        source = HanziWriterSource(cache_dir=args.cache_dir, offline=args.offline)
+        result = render_text(text, source=source, chars_per_line=0)
+        if result.is_empty:
+            print("错误：没有任何字符被渲染")
+            return EXIT_ERROR
+        rows = [
+            [stylize_stroke_set(model, config, glyph, sample=args.sample) for glyph in row]
+            for row in result.rows
+        ]
+        page = compute([len(row) for row in rows], layout)
+        glyphs = [glyph for row in rows for glyph in row]
+        gres = glyphs_to_gcode_with_stats(glyphs, page, plot)
+        svg = to_svg(glyphs, page, SvgStyle())
+
+    stats = gres.stats
+    print("== 风格化统计 ==")
+    print(f"笔画数      : {stats.stroke_count}")
+    print(f"采样点      : {stats.point_count}")
+    print(f"G 代码行数  : {stats.line_count}")
+    print(f"版面        : {page.width_mm:.1f} × {page.height_mm:.1f} mm")
+    print(f"绘制路径    : {stats.draw_length_mm:.1f} mm")
+
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(gres.lines_text(), encoding="utf-8")
+        print(f"\n已写入 G 代码：{args.output}")
+    if args.svg is not None:
+        args.svg.parent.mkdir(parents=True, exist_ok=True)
+        args.svg.write_text(svg, encoding="utf-8")
+        print(f"已写入 SVG 预览：{args.svg}")
+    if args.output is None and args.svg is None:
+        sys.stdout.write(gres.lines_text())
+
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_stdout()
     parser = _build_parser()
@@ -623,6 +842,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_inspect(args)
     if args.command == "compose":
         return _cmd_compose(args)
+    if args.command == "train":
+        return _cmd_train(args)
+    if args.command == "stylize":
+        return _cmd_stylize(args)
 
     parser.error(f"未知子命令 {args.command!r}")
     return EXIT_ERROR  # pragma: no cover - argparse 会先退出

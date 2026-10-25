@@ -160,6 +160,9 @@ def main() -> int:
         print('先运行：handwriting train --chars "..." --offline')
         return 1
 
+    # 推理固定用 CPU：这个 MLP 很小，且是 48 次串行小批量，
+    # 实测 CPU 比 CUDA 快约 6 倍（236ms vs 1549ms / 40 字）。
+    # 训练才用 GPU；等换成序列模型、批量变大后再考虑 GPU 推理。
     MODEL, CONFIG, _meta = load_checkpoint(args.model, "cpu")
     SOURCE = HanziWriterSource(cache_dir=args.cache_dir, offline=args.offline)
     UI = Path(__file__).with_name("dev_ui.html").read_text(encoding="utf-8")

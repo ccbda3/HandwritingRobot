@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>开发者模式 · 文章 → 模型排版</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#2a2f3a;--text:#e6e6e6;--dim:#9aa0a6;--accent:#67d4ff}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;display:flex;flex-direction:column}
+  header{display:flex;align-items:baseline;gap:14px;padding:13px 20px;border-bottom:1px solid #20242c;flex-shrink:0}
+  h1{font-size:16px;font-weight:500;margin:0}
+  .sub{color:var(--dim);font-size:12px}
+  .status{margin-left:auto;color:var(--dim);font-size:12px}
+  main{flex:1;display:grid;grid-template-columns:400px 1fr;min-height:0}
+  .left{padding:16px;display:flex;flex-direction:column;gap:11px;border-right:1px solid #20242c;min-height:0}
+  textarea{flex:1;min-height:200px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px;line-height:1.75;resize:none;outline:none;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  textarea:focus{border-color:var(--accent)}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:12px;color:var(--dim)}
+  .field input,.field select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--accent)}
+  .row{display:flex;align-items:center;gap:10px}
+  input[type=range]{flex:1;accent-color:var(--accent)}
+  button{background:#12303f;color:var(--accent);border:1px solid #1f5a73;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer}
+  button:hover{background:#164054}
+  .hint{color:var(--dim);font-size:12px;line-height:1.6}
+  .right{overflow:auto;padding:24px;background:#0b0d12}
+  .paper{background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.55);width:fit-content;max-width:100%;margin:0 auto}
+  .paper svg{display:block;max-width:100%;height:auto}
+  .empty{color:var(--dim);font-size:13px;padding:40px;text-align:center}
+  @media (max-width:900px){main{grid-template-columns:1fr;grid-template-rows:45% 55%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>开发者模式 · 文章 → 模型排版</h1>
+  <span class="sub">左粘贴文章，右侧实时推理</span>
+  <span class="status" id="status">准备中…</span>
+</header>
+<main>
+  <section class="left">
+    <textarea id="text" spellcheck="false">春眠不觉晓处处闻啼鸟夜来风雨声花落知多少床前明月光疑是地上霜举头望明月低头思故乡</textarea>
+    <div class="controls">
+      <div class="field">
+        <label>排版</label>
+        <select id="mode">
+          <option value="grid">网格（自动高度）</option>
+          <option value="notebook">横条本（单页）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>字宽（mm）</label>
+        <input id="size" type="number" value="10" min="4" max="30" step="1">
+      </div>
+      <div class="field">
+        <label>每行字数</label>
+        <input id="cpl" type="number" value="20" min="4" max="60" step="1">
+      </div>
+      <div class="field">
+        <label>页边距（mm）</label>
+        <input id="margin" type="number" value="8" min="0" max="30" step="1">
+      </div>
+    </div>
+    <div class="field">
+      <label>风格强度 <span id="strengthVal">100%</span></label>
+      <div class="row"><input id="strength" type="range" min="0" max="100" step="5" value="100"></div>
+    </div>
+    <button id="go">重新生成</button>
+    <div class="hint">缺字通常是字形库里没有该字符（标点、生僻字）。模型只学风格，结构仍来自标准骨架。</div>
+  </section>
+  <section class="right">
+    <div class="paper" id="preview"><div class="empty">输入文字后自动生成</div></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let timer = null;
+
+async function render(){
+  const payload = {
+    text: $('text').value,
+    mode: $('mode').value,
+    char_size: Number($('size').value),
+    chars_per_line: Number($('cpl').value),
+    margin: Number($('margin').value),
+    strength: Number($('strength').value) / 100
+  };
+  $('status').textContent = '推理中…';
+  try{
+    const res = await fetch('/render', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    $('preview').innerHTML = data.svg || '<div class="empty">没有可渲染的字</div>';
+    const miss = data.missing && data.missing.length ? ` · 缺字 ${data.missing.length}` : '';
+    $('status').textContent = `${data.chars} 字 · ${data.lines} 行${miss} · ${data.width}×${data.height} mm · ${data.elapsed}ms`;
+  }catch(err){
+    $('status').textContent = '出错：' + err.message;
+  }
+}
+
+function schedule(){
+  clearTimeout(timer);
+  timer = setTimeout(render, 300);
+}
+
+$('text').addEventListener('input', schedule);
+['mode','size','cpl','margin'].forEach(id => $(id).addEventListener('input', schedule));
+$('strength').addEventListener('input', () => {
+  $('strengthVal').textContent = $('strength').value + '%';
+  schedule();
+});
+$('go').onclick = render;
+render();
+</script>
+</body>
+</html>

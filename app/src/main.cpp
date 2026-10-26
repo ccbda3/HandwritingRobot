@@ -94,6 +94,9 @@ int main(int argc, char* argv[]) {
     if (ti >= 0 && ti + 1 < arguments.size()) {
         window.setDemoText(arguments.at(ti + 1));
     }
+    if (arguments.contains(QStringLiteral("--demo-style"))) {
+        window.setDemoStyle(true);
+    }
 
     const bool snapshot_settings =
         snapshot_mode && arguments.contains(QStringLiteral("--snapshot-settings"));

@@ -46,6 +46,7 @@ public:
     void setDemoWorkspace(const handwriting::bounds::Workspace& ws);
     void setDemoHead(double x, double y);
     void setDemoText(const QString& text);
+    void setDemoStyle(bool enabled);
 
     /// 仅供快照：拿到选项弹窗指针。
     [[nodiscard]] QDialog* settingsDialog() const noexcept { return settings_dialog_; }
@@ -86,6 +87,7 @@ private:
 
     [[nodiscard]] handwriting::render::Settings renderSettings() const;
     [[nodiscard]] handwriting::layout::Settings layoutSettings() const;
+    [[nodiscard]] handwriting::layout::StyleProfile styleProfile() const;
     [[nodiscard]] handwriting::gcode::PlotSettings plotSettings() const;
     [[nodiscard]] Rendered renderNow() const;
     void updateStatus(const Rendered& rendered);
@@ -117,6 +119,12 @@ private:
     QSpinBox* first_line_{nullptr};
     QDoubleSpinBox* char_size_{nullptr};
     QSpinBox* chars_per_line_{nullptr};
+    QCheckBox* style_enabled_{nullptr};
+    QDoubleSpinBox* style_size_cv_{nullptr};
+    QDoubleSpinBox* style_gap_mean_{nullptr};
+    QDoubleSpinBox* style_gap_cv_{nullptr};
+    QDoubleSpinBox* style_baseline_drift_{nullptr};
+    QDoubleSpinBox* style_baseline_slope_{nullptr};
     QCheckBox* show_cells_{nullptr};
     QCheckBox* show_rules_{nullptr};
 

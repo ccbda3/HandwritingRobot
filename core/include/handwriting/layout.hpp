@@ -16,6 +16,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace handwriting::layout {
@@ -78,5 +79,22 @@ struct Page {
 
 // 便捷重载：单个连续段落
 [[nodiscard]] Page compute(std::size_t char_count, const Settings& settings);
+
+// 整行风格：在版面基础上加入「字大小 / 字距 / 基线」的统计波动。
+//
+// 这些量来自真实整行采集（LineStyleFeatures 的 char_width_cv / char_gap_cv /
+// baseline_drift / baseline_slope）。全为 0 时退化为工整版面。
+struct StyleProfile {
+    double size_cv{0.0};            // 字宽变异系数（相对标准差）
+    double gap_mean_mm{3.0};        // Grid 模式的平均字距
+    double gap_cv{0.0};             // 字距变异系数
+    double baseline_drift_mm{0.0};  // 基线上下抖动（标准差）
+    double baseline_slope_mm{0.0};  // 基线斜率（每列 mm）
+    std::uint32_t seed{20261026};
+};
+
+[[nodiscard]] Page compute_styled(const std::vector<std::size_t>& row_char_counts,
+                                  const Settings& settings,
+                                  const StyleProfile& profile);
 
 }  // namespace handwriting::layout

@@ -196,6 +196,95 @@ int main() {
         HR_CHECK_NEAR(page.height_mm, 10.0 * 2 + 2 * 20.0 + 1 * 10.0);
     }
 
+    // ---- 整行风格：零波动时与工整版面一致 ----
+    {
+        Settings grid;
+        grid.mode = Mode::Grid;
+        grid.char_size_mm = 10.0;
+        grid.chars_per_line = 5;
+        grid.char_gap_mm = 3.0;
+        grid.line_gap_mm = 8.0;
+        grid.margin_x_mm = 10.0;
+        grid.margin_y_mm = 10.0;
+        const std::vector<std::size_t> rows = {5, 3};
+
+        handwriting::layout::StyleProfile profile;
+        profile.gap_mean_mm = 3.0;
+        const auto plain = handwriting::layout::compute(rows, grid);
+        const auto styled = handwriting::layout::compute_styled(rows, grid, profile);
+        HR_CHECK(plain.cells.size() == styled.cells.size());
+        if (plain.cells.size() == styled.cells.size()) {
+            for (std::size_t i = 0; i < plain.cells.size(); ++i) {
+                HR_CHECK_NEAR(plain.cells[i].x_mm, styled.cells[i].x_mm);
+                HR_CHECK_NEAR(plain.cells[i].y_mm, styled.cells[i].y_mm);
+                HR_CHECK_NEAR(plain.cells[i].size_mm, styled.cells[i].size_mm);
+                HR_CHECK_NEAR(plain.cells[i].baseline_mm, styled.cells[i].baseline_mm);
+            }
+        }
+        HR_CHECK_NEAR(plain.width_mm, styled.width_mm);
+        HR_CHECK_NEAR(plain.height_mm, styled.height_mm);
+    }
+
+    // ---- 整行风格：字大小/字距/基线确实变化，且同种子可复现 ----
+    {
+        Settings grid;
+        grid.mode = Mode::Grid;
+        grid.char_size_mm = 10.0;
+        grid.chars_per_line = 6;
+        grid.char_gap_mm = 3.0;
+        grid.line_gap_mm = 8.0;
+        grid.margin_x_mm = 10.0;
+        grid.margin_y_mm = 10.0;
+        const std::vector<std::size_t> rows = {6};
+
+        handwriting::layout::StyleProfile profile;
+        profile.size_cv = 0.10;
+        profile.gap_mean_mm = 3.0;
+        profile.gap_cv = 0.30;
+        profile.baseline_drift_mm = 0.5;
+        profile.baseline_slope_mm = 0.05;
+        profile.seed = 42;
+
+        const auto page = handwriting::layout::compute_styled(rows, grid, profile);
+        const auto again = handwriting::layout::compute_styled(rows, grid, profile);
+        HR_CHECK(page.cells.size() == 6);
+        bool size_changed = false;
+        bool baseline_changed = false;
+        for (std::size_t i = 0; i < page.cells.size(); ++i) {
+            HR_CHECK(page.cells[i].size_mm >= 8.5 - 1e-9);
+            HR_CHECK(page.cells[i].size_mm <= 11.2 + 1e-9);
+            if (std::fabs(page.cells[i].size_mm - 10.0) > 1e-6) {
+                size_changed = true;
+            }
+            if (i > 0 &&
+                std::fabs(page.cells[i].baseline_mm - page.cells[i - 1].baseline_mm) >
+                    1e-6) {
+                baseline_changed = true;
+            }
+            HR_CHECK_NEAR(page.cells[i].x_mm, again.cells[i].x_mm);
+            HR_CHECK_NEAR(page.cells[i].size_mm, again.cells[i].size_mm);
+        }
+        HR_CHECK(size_changed);
+        HR_CHECK(baseline_changed);
+    }
+
+    // ---- 整行风格：横条本仍压在横线上 ----
+    {
+        const Settings nb = notebook();
+        handwriting::layout::StyleProfile profile;
+        profile.size_cv = 0.08;
+        profile.baseline_drift_mm = 0.4;
+        profile.seed = 7;
+        const auto page = handwriting::layout::compute_styled({5}, nb, profile);
+        HR_CHECK_NEAR(page.width_mm, 150.0);
+        HR_CHECK_NEAR(page.height_mm, 213.0);
+        HR_CHECK(page.cells.size() == 5);
+        const double pitch = 213.0 / 22.0;
+        for (const auto& cell : page.cells) {
+            HR_CHECK(std::fabs(cell.baseline_mm - pitch) <= pitch * 0.2 + 1e-9);
+        }
+    }
+
     // ---- 参数校验 ----
     {
         Settings settings = notebook();

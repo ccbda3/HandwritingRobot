@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <stdexcept>
 
 #include "handwriting/glyph.hpp"
@@ -130,6 +131,104 @@ Page compute(const std::vector<std::size_t>& row_char_counts, const Settings& se
     const int used_lines = (grid_rows == 0) ? 0 : (line > 0 ? line : 1);
     page.height_mm = settings.margin_y_mm * 2.0 + static_cast<double>(used_lines) * char_size +
                      static_cast<double>(std::max(0, used_lines - 1)) * settings.line_gap_mm;
+    return page;
+}
+
+Page compute_styled(const std::vector<std::size_t>& row_char_counts,
+                    const Settings& settings, const StyleProfile& profile) {
+    const double base_size = resolve_char_size(settings);
+    if (base_size <= 0.0) {
+        throw std::invalid_argument("字宽必须为正");
+    }
+    const int per_line = resolve_chars_per_line(settings);
+    const double gap_mean = std::max(0.0, profile.gap_mean_mm);
+    const double size_cv = std::max(0.0, profile.size_cv);
+    const double gap_cv = std::max(0.0, profile.gap_cv);
+    const double drift = std::max(0.0, profile.baseline_drift_mm);
+    const double slope = profile.baseline_slope_mm;
+
+    std::mt19937 rng(profile.seed);
+    std::normal_distribution<double> normal(0.0, 1.0);
+
+    Page page;
+    page.chars_per_line = per_line;
+
+    if (settings.mode == Mode::Notebook) {
+        const double pitch = notebook_pitch(settings);
+        const double cell_width = settings.page_width_mm / per_line;
+        page.width_mm = settings.page_width_mm;
+        page.height_mm = settings.page_height_mm;
+        page.rule_lines_mm.reserve(static_cast<std::size_t>(settings.line_count));
+        for (int i = 0; i < settings.line_count; ++i) {
+            page.rule_lines_mm.push_back((i + 1) * pitch);
+        }
+
+        int line = std::max(0, settings.first_line - 1);
+        for (const std::size_t row_count : row_char_counts) {
+            int column = 0;
+            for (std::size_t i = 0; i < row_count; ++i) {
+                if (column >= per_line) {
+                    ++line;
+                    column = 0;
+                }
+                const double size =
+                    base_size * std::clamp(1.0 + size_cv * normal(rng), 0.85, 1.12);
+                const double offset = std::clamp(
+                    slope * column + drift * normal(rng), -pitch * 0.2, pitch * 0.2);
+                const double baseline = (line + 1) * pitch;
+                const double x = column * cell_width + (cell_width - size) / 2.0;
+                const double y = baseline - glyph::kBaselineRatio * size + offset;
+                page.cells.push_back(
+                    Cell{x, y, size, y + glyph::kBaselineRatio * size, line, column});
+                ++column;
+            }
+            ++line;
+        }
+        return page;
+    }
+
+    int line = 0;
+    double max_right = 0.0;
+    double max_bottom = 0.0;
+    std::size_t total = 0;
+    for (const std::size_t row_count : row_char_counts) {
+        total += row_count;
+        int column = 0;
+        double cursor_x = settings.margin_x_mm;
+        for (std::size_t i = 0; i < row_count; ++i) {
+            if (column >= per_line) {
+                ++line;
+                column = 0;
+                cursor_x = settings.margin_x_mm;
+            }
+            const double size =
+                base_size * std::clamp(1.0 + size_cv * normal(rng), 0.85, 1.12);
+            const double gap =
+                std::max(0.0, gap_mean + gap_cv * gap_mean * normal(rng));
+            const double offset = std::clamp(
+                slope * column + drift * normal(rng), -base_size * 0.2,
+                base_size * 0.2);
+            const double y = settings.margin_y_mm +
+                             line * (base_size + settings.line_gap_mm) + offset;
+            page.cells.push_back(
+                Cell{cursor_x, y, size, y + glyph::kBaselineRatio * size, line, column});
+            max_right = std::max(max_right, cursor_x + size);
+            max_bottom = std::max(max_bottom, y + size);
+            cursor_x += size + gap;
+            ++column;
+        }
+        ++line;
+    }
+
+    const int used_lines = total == 0 ? 0 : std::max(1, line);
+    const double nominal_width =
+        settings.margin_x_mm * 2.0 + per_line * base_size +
+        std::max(0, per_line - 1) * gap_mean;
+    const double nominal_height =
+        settings.margin_y_mm * 2.0 + used_lines * base_size +
+        std::max(0, used_lines - 1) * settings.line_gap_mm;
+    page.width_mm = std::max(nominal_width, max_right + settings.margin_x_mm);
+    page.height_mm = std::max(nominal_height, max_bottom + settings.margin_y_mm);
     return page;
 }
 

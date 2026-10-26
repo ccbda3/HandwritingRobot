@@ -108,6 +108,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(refresh_timer_, &QTimer::timeout, this, &MainWindow::refresh);
 
     updateModeEnabled();
+    updateTextPreview();
     refresh();
 }
 
@@ -144,7 +145,6 @@ void MainWindow::buildUi() {
     text_layout->addWidget(text_hint);
 
     panel_layout->addWidget(text_group);
-    updateTextPreview();
 
     // ---- 常用版面（主界面只留高频项） ----
     auto* common_group = new QGroupBox(QStringLiteral("常用版面"));
@@ -169,6 +169,9 @@ void MainWindow::buildUi() {
     chars_per_line_->setValue(0);
     chars_per_line_->setSpecialValueText(QStringLiteral("自动"));
     common_form->addRow(QStringLiteral("每行字数"), chars_per_line_);
+
+    style_enabled_ = new QCheckBox(QStringLiteral("整行风格（字大小/字距/基线）"));
+    common_form->addRow(QString(), style_enabled_);
 
     panel_layout->addWidget(common_group);
 
@@ -208,6 +211,31 @@ void MainWindow::buildUi() {
     first_line_->setValue(1);
     page_form->addRow(QStringLiteral("从第几行起"), first_line_);
     tabs->addTab(page_group, QStringLiteral("版面"));
+
+    // 整行风格页
+    auto* style_profile_group = new QGroupBox(QStringLiteral("整行风格波动"));
+    auto* sp_form = new QFormLayout(style_profile_group);
+    style_size_cv_ = make_double(0.0, 0.30, 0.08, 2);
+    style_size_cv_->setSingleStep(0.01);
+    sp_form->addRow(QStringLiteral("字宽变化（CV）"), style_size_cv_);
+    style_gap_mean_ = make_double(0.0, 20.0, 3.0, 1, QStringLiteral(" mm"));
+    sp_form->addRow(QStringLiteral("平均字距"), style_gap_mean_);
+    style_gap_cv_ = make_double(0.0, 0.6, 0.30, 2);
+    style_gap_cv_->setSingleStep(0.05);
+    sp_form->addRow(QStringLiteral("字距变化（CV）"), style_gap_cv_);
+    style_baseline_drift_ = make_double(0.0, 2.0, 0.5, 2, QStringLiteral(" mm"));
+    style_baseline_drift_->setSingleStep(0.1);
+    sp_form->addRow(QStringLiteral("基线抖动"), style_baseline_drift_);
+    style_baseline_slope_ = make_double(-0.2, 0.2, 0.03, 2, QStringLiteral(" mm/字"));
+    style_baseline_slope_->setSingleStep(0.01);
+    sp_form->addRow(QStringLiteral("基线倾斜"), style_baseline_slope_);
+    auto* style_hint = new QLabel(
+        QStringLiteral("勾选左栏「整行风格」后生效。全为 0 即工整版面；"
+                       "横条本主要体现字大小与基线波动，字距变化在自由版面更明显。"));
+    style_hint->setWordWrap(true);
+    style_hint->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    sp_form->addRow(style_hint);
+    tabs->addTab(style_profile_group, QStringLiteral("整行风格"));
 
     // 字形页
     auto* style_group = new QGroupBox(QStringLiteral("字形"));
@@ -333,10 +361,12 @@ void MainWindow::buildUi() {
 
     for (QDoubleSpinBox* box :
          {page_width_, page_height_, char_size_, slant_, jitter_, pressure_amp_, feed_draw_,
-          pen_up_z_, pen_down_z_}) {
+          pen_up_z_, pen_down_z_, style_size_cv_, style_gap_mean_, style_gap_cv_,
+          style_baseline_drift_, style_baseline_slope_}) {
         connect(box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
                 &MainWindow::scheduleRefresh);
     }
+    connect(style_enabled_, &QCheckBox::toggled, this, &MainWindow::scheduleRefresh);
     for (QSpinBox* box : {line_count_, first_line_, chars_per_line_}) {
         connect(box, QOverload<int>::of(&QSpinBox::valueChanged), this,
                 &MainWindow::scheduleRefresh);
@@ -497,6 +527,16 @@ handwriting::layout::Settings MainWindow::layoutSettings() const {
     return settings;
 }
 
+handwriting::layout::StyleProfile MainWindow::styleProfile() const {
+    handwriting::layout::StyleProfile profile;
+    profile.size_cv = style_size_cv_->value();
+    profile.gap_mean_mm = style_gap_mean_->value();
+    profile.gap_cv = style_gap_cv_->value();
+    profile.baseline_drift_mm = style_baseline_drift_->value();
+    profile.baseline_slope_mm = style_baseline_slope_->value();
+    return profile;
+}
+
 handwriting::gcode::PlotSettings MainWindow::plotSettings() const {
     handwriting::gcode::PlotSettings settings;
     settings.use_z_axis = (pen_combo_->currentData().toInt() == 0);
@@ -535,7 +575,10 @@ MainWindow::Rendered MainWindow::renderNow() const {
         row_counts.push_back(row.size());
     }
 
-    out.page = handwriting::layout::compute(row_counts, layoutSettings());
+    out.page = style_enabled_->isChecked()
+                   ? handwriting::layout::compute_styled(
+                         row_counts, layoutSettings(), styleProfile())
+                   : handwriting::layout::compute(row_counts, layoutSettings());
 
     for (auto& row : rendered.rows) {
         for (auto& glyph : row) {
@@ -632,10 +675,16 @@ void MainWindow::updateTextPreview() {
         return;
     }
     const QString text = text_edit_->toPlainText();
-    const QStringList lines = text.split('\n');
+    const int per_line =
+        handwriting::layout::resolve_chars_per_line(layoutSettings());
+    int lines = 0;
+    for (const QString& line : text.split('\n')) {
+        const int length = static_cast<int>(line.size());
+        lines += qMax(1, (length + per_line - 1) / per_line);
+    }
     if (text_stats_ != nullptr) {
         text_stats_->setText(
-            QStringLiteral("%1 字符 · %2 行").arg(text.size()).arg(lines.size()));
+            QStringLiteral("%1 字符 · %2 行").arg(text.size()).arg(lines));
     }
 }
 
@@ -892,6 +941,12 @@ void MainWindow::resetLayoutDefaults() {
     slant_->setValue(0.0);
     jitter_->setValue(0.0);
     pressure_amp_->setValue(0.30);
+    style_enabled_->setChecked(false);
+    style_size_cv_->setValue(0.08);
+    style_gap_mean_->setValue(3.0);
+    style_gap_cv_->setValue(0.30);
+    style_baseline_drift_->setValue(0.5);
+    style_baseline_slope_->setValue(0.03);
     updateModeEnabled();
     refresh();
     canvas_->zoomToFit();
@@ -986,4 +1041,17 @@ void MainWindow::setDemoText(const QString& text) {
     if (text_edit_ != nullptr) {
         text_edit_->setPlainText(text);
     }
+}
+
+void MainWindow::setDemoStyle(bool enabled) {
+    if (style_enabled_ == nullptr) {
+        return;
+    }
+    if (enabled) {
+        style_size_cv_->setValue(0.14);
+        style_gap_cv_->setValue(0.35);
+        style_baseline_drift_->setValue(1.0);
+        style_baseline_slope_->setValue(0.06);
+    }
+    style_enabled_->setChecked(enabled);
 }

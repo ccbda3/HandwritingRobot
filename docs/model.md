@@ -73,6 +73,20 @@ C++ 侧调用 `handwriting::style::Model::load(json).stylize(stroke_set)`，
 实现见 `core/src/style_model.cpp`。Python 的 `model/generate.py` 保留为
 训练期参考实现；跨语言对拍工具 `hr-style-dump`，当前最大误差 **1.1e-07**。
 
+## 开发者模式（文章 → 实时推理 + 排版 + 编辑）
+
+```bash
+python scripts/serve_dev.py --model data/exports/style-model.pt \
+  --weights data/exports/style-model.json
+# 打开 http://127.0.0.1:8765
+```
+
+- 左侧粘贴文章，右侧实时出模型排版。
+- **默认走 C++** `hr-style-batch`（ADR-0007）；找不到二进制才回退 Python。
+- 右侧可以直接**点字出光标**编辑：输入替换、方向键移动、Enter 换行、Backspace 删字。
+- `/render` 返回每个字格的毫米坐标（`cells`），前端据此把光标对到格子上。
+- `?static=1` 只看静态图；`?selftest=1` 跑一次编辑自测。
+
 ## 限制（v0 明确不做的事）
 
 - **不建模笔间抬落笔**：笔画之间固定抬笔，不学连笔。

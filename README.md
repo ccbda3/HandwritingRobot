@@ -43,6 +43,7 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 | 串口 / GRBL 通信（C++ 核心） | 可用（流控、状态机、安全检查，118 项断言覆盖） |
 | 工作区标定（软限位） | 可用（4 步向导 + 示意图 + 越界保护） |
 | 笔迹风格模型 v0（训练 PyTorch / 推理 C++） | 可用 |
+| 开发者模式（文章实时推理 + 排版 + 预览内编辑） | 可用 |
 | 运动约束优化（论文核心） | 未开始 |
 
 ## 风格模型 v0（可选，需要 torch）
@@ -80,6 +81,16 @@ handwriting export-weights --model data/exports/style-model.pt \
 
 跨语言对拍工具 `hr-style-dump`，当前最大误差 1.1e-07。规则见
 [ADR-0007](docs/adr/0007-runtime-in-cpp-python-for-training.md)。
+
+开发者模式：粘贴文章，右侧实时推理 + 排版，并可直接点字编辑。
+
+```bash
+python scripts/serve_dev.py --model data/exports/style-model.pt \
+  --weights data/exports/style-model.json
+# 打开 http://127.0.0.1:8765
+```
+
+默认走 C++ `hr-style-batch`；找不到二进制时回退 Python 参考实现。
 
 ## 快速开始
 

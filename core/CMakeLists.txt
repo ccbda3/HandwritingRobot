@@ -84,4 +84,8 @@ if(HR_BUILD_TESTS)
     # 风格模型推理的跨语言对拍工具（Python 训练侧调用）
     add_executable(hr-style-dump tools/style_dump.cpp)
     target_link_libraries(hr-style-dump PRIVATE handwriting_core)
+
+    # 批量推理：开发服务器通过 stdin/stdout 调用，运行时不再依赖 Python
+    add_executable(hr-style-batch tools/style_batch.cpp)
+    target_link_libraries(hr-style-batch PRIVATE handwriting_core)
 endif()

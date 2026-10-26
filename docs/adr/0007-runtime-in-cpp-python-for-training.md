@@ -55,3 +55,8 @@
 | 继续 Python 推理 | 安装包 / 启动 / 部署退化，违背 ADR-0003 |
 | 纯 C | 与 Qt/C++ 核心冲突，需重写容器与类，收益低 |
 | Python 推理 + pybind11 | 仍需 Python 运行时，没解决部署问题 |
+
+## 更新
+
+- 2026-10-26：`scripts/serve_dev.py` 已改为默认调用 C++ `hr-style-batch`，
+  Python 仅作回退；开发者模式支持预览内直接编辑。

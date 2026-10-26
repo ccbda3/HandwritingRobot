@@ -31,6 +31,12 @@
 
 ### 新增
 
+- **开发者模式**（`scripts/serve_dev.py`、`scripts/dev_ui.html`）：粘贴文章，
+  右侧实时显示模型推理 + 排版；**可直接点字出光标编辑**（输入替换、方向键移动、
+  Enter 换行、Backspace 删字），左侧文本与右侧排版双向同步。
+- **C++ 批量推理工具**（`core/tools/style_batch.cpp`，`hr-style-batch`）：
+  stdin 读 JSON、stdout 写 JSON；dev server 默认调用它，Python 仅作回退。
+  同一「永」字与 Python 参考实现最大误差 **2.88e-07**。
 - **笔迹风格模型 v0**（`src/handwriting/model/`）：把每一笔拆成「中心线 + 残差」，
   用混合密度网络（MDN）学习残差与笔压的分布，再作用到任意中心线（字形骨架 / SVG 路径）。
   含训练循环（NLL + 笔压 NLL、warmup+cosine、梯度裁剪）、合成数据与字形基准数据、

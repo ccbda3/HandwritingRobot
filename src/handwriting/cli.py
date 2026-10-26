@@ -232,7 +232,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ---- train：训练风格模型 ------------------------------------------------
     train_p = subparsers.add_parser("train", help="训练风格模型（不提供数据时用合成笔迹自测）")
-    train_p.add_argument("--data", type=Path, help="整行采集 JSON（2.0）；不填则用合成数据")
+    train_p.add_argument(
+        "--data", type=Path, help="采集 JSON（1.0 单字 / 2.0 整行）；不填则用合成数据"
+    )
+    train_p.add_argument(
+        "--align",
+        action="store_true",
+        help="把采集数据对齐到标准骨架再训练（真实数据建议开启）",
+    )
     train_p.add_argument(
         "--chars",
         help="用字形骨架做基准（需本地缓存），如 '永西叶'；比随机曲线更接近真实笔画",
@@ -681,23 +688,76 @@ def _resolve_device(value: str) -> str:
     return default_device() if value == "auto" else value
 
 
+def _capture_pairs(path: Path, source: HanziWriterSource) -> list[tuple]:
+    """从 1.0/2.0 采集文件里提取 (采集字, 标准骨架) 对。"""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    fmt = payload.get("format")
+    pairs: list[tuple] = []
+
+    if fmt == "handwriting-capture/1.0":
+        data = CaptureData.from_dict(payload, source=path)
+        for sample in data.samples:
+            if not sample.char or not sample.strokes:
+                continue
+            try:
+                reference = source.load(sample.char).to_stroke_set()
+            except (LookupError, OSError, ValueError):
+                continue
+            pairs.append((sample.to_stroke_set(fit=True), reference))
+    elif fmt == "handwriting-capture/2.0":
+        data = LineCapture.from_dict(payload, source=path)
+        for line in data.lines:
+            try:
+                chars = line.split_chars(fit=True)
+            except ValueError:
+                continue
+            for char, captured in chars:
+                if not char or not captured.strokes:
+                    continue
+                try:
+                    reference = source.load(char).to_stroke_set()
+                except (LookupError, OSError, ValueError):
+                    continue
+                pairs.append((captured, reference))
+    else:
+        raise SystemExit(f"不支持的数据格式：{fmt!r}")
+
+    return pairs
+
+
 def _cmd_train(args: argparse.Namespace) -> int:
     from handwriting.model.data import build_examples
     from handwriting.model.synthetic import synthetic_pairs
     from handwriting.model.train import TrainConfig, save_checkpoint, train
 
+    if args.align and args.data is None:
+        print("错误：--align 需要配合 --data 使用")
+        return EXIT_ERROR
+
     if args.data is not None:
         if not args.data.is_file():
             print(f"错误：找不到数据文件 {args.data}")
             return EXIT_ERROR
-        from handwriting.line import LineCapture
+        if args.align:
+            from handwriting.model.align import build_aligned_examples
 
-        capture = LineCapture.load(args.data)
-        strokes = [stroke for line in capture.lines for stroke in line.strokes]
-        examples = build_examples(strokes, args.n_points, args.smooth)
-        source_label = str(args.data)
+            glyph_source = HanziWriterSource(cache_dir=args.cache_dir, offline=args.offline)
+            pairs = _capture_pairs(args.data, glyph_source)
+            if not pairs:
+                print("错误：没有可对齐的样本（检查字形缓存或 char_ranges）")
+                return EXIT_ERROR
+            examples = build_aligned_examples(pairs, args.n_points, args.smooth)
+            source_label = f"{args.data}（已对齐）"
+        else:
+            payload = json.loads(args.data.read_text(encoding="utf-8"))
+            if payload.get("format") == "handwriting-capture/1.0":
+                print("错误：1.0 单字数据请加 --align（需要对齐到标准骨架）")
+                return EXIT_ERROR
+            capture = LineCapture.load(args.data)
+            strokes = [stroke for line in capture.lines for stroke in line.strokes]
+            examples = build_examples(strokes, args.n_points, args.smooth)
+            source_label = str(args.data)
     elif args.chars:
-        from handwriting.glyph import HanziWriterSource
         from handwriting.model.synthetic import glyph_pairs
 
         glyph_source = HanziWriterSource(cache_dir=args.cache_dir, offline=args.offline)

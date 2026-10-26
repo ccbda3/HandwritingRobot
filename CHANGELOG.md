@@ -9,6 +9,10 @@
 
 ### 变更
 
+- **Qt 界面重排（参考奎享）**：主界面左栏只留「文本 + 常用版面 + 高级设置」；
+  页面尺寸/行数、字形、机器、字形数据、预览显示收进「选项」弹窗（标签页），
+  菜单「设置 → 选项」、工具栏「选项」、左栏「高级设置…」三个入口都能打开；
+  弹窗非模态，改完立刻重排，底部有「恢复默认 / 关闭」。
 - **模型推理迁到 C++**（`core/src/style_model.cpp`、`core/include/handwriting/style_model.hpp`）：
   按 ADR-0007，产品运行时不再依赖 Python。MLP 前向 + MDN 均值 + 残差应用全部在 C++；
   Python 训练侧通过 `handwriting export-weights` 导出 `handwriting-style-model/1` JSON。

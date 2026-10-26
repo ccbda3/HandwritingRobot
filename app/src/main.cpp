@@ -1,5 +1,7 @@
 #include <QApplication>
+#include <QDialog>
 #include <QFontDatabase>
+#include <QMetaObject>
 #include <QStringList>
 #include <QTimer>
 
@@ -89,11 +91,21 @@ int main(int argc, char* argv[]) {
         window.setDemoHead(demo_hx, demo_hy);
     }
 
+    const bool snapshot_settings =
+        snapshot_mode && arguments.contains(QStringLiteral("--snapshot-settings"));
+    if (snapshot_settings) {
+        QMetaObject::invokeMethod(&window, "showSettings", Qt::QueuedConnection);
+    }
+
     if (snapshot_mode) {
         const QString path = arguments.at(index + 1);
         // 等一拍让延迟刷新定时器跑完、布局稳定下来
-        QTimer::singleShot(600, &window, [&window, path]() {
-            const bool ok = window.grab().save(path);
+        QTimer::singleShot(600, &window, [&window, path, snapshot_settings]() {
+            QWidget* target = &window;
+            if (snapshot_settings && window.settingsDialog() != nullptr) {
+                target = window.settingsDialog();
+            }
+            const bool ok = target->grab().save(path);
             QApplication::exit(ok ? 0 : 1);
         });
     }

@@ -26,6 +26,7 @@ class QCheckBox;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
+class QDialog;
 class QLineEdit;
 class QPlainTextEdit;
 class QSpinBox;
@@ -44,11 +45,15 @@ public:
     void setDemoWorkspace(const handwriting::bounds::Workspace& ws);
     void setDemoHead(double x, double y);
 
+    /// 仅供快照：拿到选项弹窗指针。
+    [[nodiscard]] QDialog* settingsDialog() const noexcept { return settings_dialog_; }
+
 private slots:
     void scheduleRefresh();
     void refresh();
     void beginCellEdit(int index);
     void commitCellEdit();
+    void showSettings();
     void resetLayoutDefaults();
     void exportGcode();
     void exportPreviewImage();
@@ -86,6 +91,7 @@ private:
     // ---- 文本与画布 ----
     QPlainTextEdit* text_edit_{nullptr};
     PreviewCanvas* canvas_{nullptr};
+    QDialog* settings_dialog_{nullptr};
     QLineEdit* cell_editor_{nullptr};
     int edit_index_{-1};
     Rendered last_rendered_;

@@ -7,6 +7,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -27,6 +29,7 @@
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -129,9 +132,9 @@ void MainWindow::buildUi() {
     text_layout->addWidget(text_edit_);
     panel_layout->addWidget(text_group);
 
-    // ---- 版面 ----
-    auto* layout_group = new QGroupBox(QStringLiteral("版面"));
-    auto* form = new QFormLayout(layout_group);
+    // ---- 常用版面（主界面只留高频项） ----
+    auto* common_group = new QGroupBox(QStringLiteral("常用版面"));
+    auto* common_form = new QFormLayout(common_group);
 
     mode_combo_ = new QComboBox;
     mode_combo_->addItem(QStringLiteral("横条本（字压横线）"), 0);
@@ -141,46 +144,60 @@ void MainWindow::buildUi() {
                 updateModeEnabled();
                 scheduleRefresh();
             });
-    form->addRow(QStringLiteral("模式"), mode_combo_);
-
-    page_width_ = make_double(20.0, 1000.0, kNotebookWidthMm, 1, QStringLiteral(" mm"));
-    page_height_ = make_double(20.0, 1000.0, kNotebookHeightMm, 1, QStringLiteral(" mm"));
-    form->addRow(QStringLiteral("书写区宽"), page_width_);
-    form->addRow(QStringLiteral("书写区高"), page_height_);
-
-    line_count_ = new QSpinBox;
-    line_count_->setRange(1, 200);
-    line_count_->setValue(kNotebookLines);
-    form->addRow(QStringLiteral("横线行数"), line_count_);
-
-    first_line_ = new QSpinBox;
-    first_line_->setRange(1, 200);
-    first_line_->setValue(1);
-    form->addRow(QStringLiteral("从第几行起"), first_line_);
+    common_form->addRow(QStringLiteral("模式"), mode_combo_);
 
     char_size_ = make_double(0.0, 200.0, 0.0, 2, QStringLiteral(" mm"));
     char_size_->setSpecialValueText(QStringLiteral("自动（等于行距）"));
-    form->addRow(QStringLiteral("字宽"), char_size_);
+    common_form->addRow(QStringLiteral("字宽"), char_size_);
 
     chars_per_line_ = new QSpinBox;
     chars_per_line_->setRange(0, 200);
     chars_per_line_->setValue(0);
     chars_per_line_->setSpecialValueText(QStringLiteral("自动"));
-    form->addRow(QStringLiteral("每行字数"), chars_per_line_);
+    common_form->addRow(QStringLiteral("每行字数"), chars_per_line_);
 
-    show_cells_ = new QCheckBox(QStringLiteral("显示字格"));
-    show_cells_->setChecked(true);
-    show_rules_ = new QCheckBox(QStringLiteral("显示横线"));
-    show_rules_->setChecked(true);
-    form->addRow(QString(), show_cells_);
-    form->addRow(QString(), show_rules_);
+    panel_layout->addWidget(common_group);
 
-    panel_layout->addWidget(layout_group);
+    auto* settings_button = new QPushButton(QStringLiteral("高级设置…"));
+    connect(settings_button, &QPushButton::clicked, this, &MainWindow::showSettings);
+    panel_layout->addWidget(settings_button);
 
-    // ---- 字形 ----
+    auto* common_hint = new QLabel(
+        QStringLiteral("页面尺寸、行数、字形、机器参数、字形数据都在「高级设置」里。"));
+    common_hint->setWordWrap(true);
+    common_hint->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    panel_layout->addWidget(common_hint);
+
+    // ---- 选项弹窗（非模态：改完立刻重排） ----
+    settings_dialog_ = new QDialog(this);
+    settings_dialog_->setWindowTitle(QStringLiteral("选项"));
+    settings_dialog_->resize(520, 560);
+    auto* dialog_layout = new QVBoxLayout(settings_dialog_);
+    auto* tabs = new QTabWidget(settings_dialog_);
+    dialog_layout->addWidget(tabs);
+
+    // 版面页
+    auto* page_group = new QGroupBox(QStringLiteral("页面与行"));
+    auto* page_form = new QFormLayout(page_group);
+    page_width_ = make_double(20.0, 1000.0, kNotebookWidthMm, 1, QStringLiteral(" mm"));
+    page_height_ = make_double(20.0, 1000.0, kNotebookHeightMm, 1, QStringLiteral(" mm"));
+    page_form->addRow(QStringLiteral("书写区宽"), page_width_);
+    page_form->addRow(QStringLiteral("书写区高"), page_height_);
+
+    line_count_ = new QSpinBox;
+    line_count_->setRange(1, 200);
+    line_count_->setValue(kNotebookLines);
+    page_form->addRow(QStringLiteral("横线行数"), line_count_);
+
+    first_line_ = new QSpinBox;
+    first_line_->setRange(1, 200);
+    first_line_->setValue(1);
+    page_form->addRow(QStringLiteral("从第几行起"), first_line_);
+    tabs->addTab(page_group, QStringLiteral("版面"));
+
+    // 字形页
     auto* style_group = new QGroupBox(QStringLiteral("字形"));
     auto* style_form = new QFormLayout(style_group);
-
     slant_ = make_double(-20.0, 20.0, 0.0, 1, QStringLiteral("°"));
     style_form->addRow(QStringLiteral("倾斜（右倾为正）"), slant_);
     jitter_ = make_double(0.0, 0.02, 0.0, 4);
@@ -189,13 +206,11 @@ void MainWindow::buildUi() {
     pressure_amp_ = make_double(0.0, 0.5, 0.30, 2);
     pressure_amp_->setSingleStep(0.05);
     style_form->addRow(QStringLiteral("提按幅度"), pressure_amp_);
+    tabs->addTab(style_group, QStringLiteral("字形"));
 
-    panel_layout->addWidget(style_group);
-
-    // ---- 机器 ----
+    // 机器页
     auto* machine_group = new QGroupBox(QStringLiteral("机器"));
     auto* machine_form = new QFormLayout(machine_group);
-
     pen_combo_ = new QComboBox;
     pen_combo_->addItem(QStringLiteral("Z 轴（步进电机）"), 0);
     pen_combo_->addItem(QStringLiteral("主轴 PWM（舵机 / 电磁铁）"), 1);
@@ -214,10 +229,9 @@ void MainWindow::buildUi() {
     // 有些机器 Y+ 朝上（纸上向下走是 -Y），勾上后输出的 Y 取反。
     invert_y_ = new QCheckBox(QStringLiteral("Y 轴翻转（向下为负）"));
     machine_form->addRow(QString(), invert_y_);
+    tabs->addTab(machine_group, QStringLiteral("机器"));
 
-    panel_layout->addWidget(machine_group);
-
-    // ---- 数据源 ----
+    // 字形数据页
     auto* source_group = new QGroupBox(QStringLiteral("字形数据"));
     auto* source_layout = new QVBoxLayout(source_group);
     cache_edit_ = new QLineEdit(QString::fromStdString(find_default_cache().string()));
@@ -238,8 +252,31 @@ void MainWindow::buildUi() {
     source_hint->setWordWrap(true);
     source_hint->setStyleSheet(QStringLiteral("color:#8a8a96;"));
     source_layout->addWidget(source_hint);
+    tabs->addTab(source_group, QStringLiteral("字形数据"));
 
-    panel_layout->addWidget(source_group);
+    // 显示页
+    auto* display_group = new QGroupBox(QStringLiteral("预览显示"));
+    auto* display_layout = new QVBoxLayout(display_group);
+    show_cells_ = new QCheckBox(QStringLiteral("显示字格"));
+    show_cells_->setChecked(true);
+    show_rules_ = new QCheckBox(QStringLiteral("显示横线"));
+    show_rules_->setChecked(true);
+    display_layout->addWidget(show_cells_);
+    display_layout->addWidget(show_rules_);
+    display_layout->addStretch();
+    tabs->addTab(display_group, QStringLiteral("显示"));
+
+    auto* dialog_buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto* reset_button = dialog_buttons->addButton(
+        QStringLiteral("恢复默认"), QDialogButtonBox::ResetRole);
+    connect(reset_button, &QPushButton::clicked, this,
+            &MainWindow::resetLayoutDefaults);
+    auto* close_button = dialog_buttons->button(QDialogButtonBox::Close);
+    if (close_button != nullptr) {
+        close_button->setText(QStringLiteral("关闭"));
+    }
+    connect(dialog_buttons, &QDialogButtonBox::rejected, settings_dialog_, &QDialog::hide);
+    dialog_layout->addWidget(dialog_buttons);
     panel_layout->addStretch();
 
     auto* scroll = new QScrollArea;
@@ -248,7 +285,7 @@ void MainWindow::buildUi() {
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     // ---- 左侧停靠：参数面板（可滚动） ----
-    auto* params_dock = new QDockWidget(QStringLiteral("参数"), this);
+    auto* params_dock = new QDockWidget(QStringLiteral("常用"), this);
     params_dock->setObjectName(QStringLiteral("paramsDock"));
     params_dock->setWidget(scroll);
     params_dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
@@ -353,7 +390,7 @@ void MainWindow::buildMenus() {
     connect(rules_action, &QAction::toggled, show_rules_, &QCheckBox::setChecked);
 
     view_menu->addSeparator();
-    auto* params_action = view_menu->addAction(QStringLiteral("参数面板(&P)"));
+    auto* params_action = view_menu->addAction(QStringLiteral("常用面板(&P)"));
     params_action->setCheckable(true);
     params_action->setChecked(true);
     connect(params_action, &QAction::toggled, this, [this](bool on) {
@@ -375,12 +412,19 @@ void MainWindow::buildMenus() {
     refresh_action->setShortcut(QKeySequence(QStringLiteral("F5")));
     connect(refresh_action, &QAction::triggered, this, &MainWindow::refresh);
 
+    auto* settings_menu = menuBar()->addMenu(QStringLiteral("设置(&S)"));
+    auto* options_action = settings_menu->addAction(QStringLiteral("选项(&O)..."));
+    options_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+,")));
+    connect(options_action, &QAction::triggered, this, &MainWindow::showSettings);
+
     auto* toolbar = addToolBar(QStringLiteral("主工具栏"));
     toolbar->setMovable(false);
     toolbar->addAction(export_action);
     toolbar->addSeparator();
     toolbar->addAction(fit_action);
     toolbar->addAction(refresh_action);
+    toolbar->addSeparator();
+    toolbar->addAction(options_action);
 }
 
 void MainWindow::buildStatusBar() {
@@ -401,6 +445,15 @@ void MainWindow::updateModeEnabled() {
     page_height_->setEnabled(notebook);
     line_count_->setEnabled(notebook);
     first_line_->setEnabled(notebook);
+}
+
+void MainWindow::showSettings() {
+    if (settings_dialog_ == nullptr) {
+        return;
+    }
+    settings_dialog_->show();
+    settings_dialog_->raise();
+    settings_dialog_->activateWindow();
 }
 
 // ---------------------------------------------------------------------------

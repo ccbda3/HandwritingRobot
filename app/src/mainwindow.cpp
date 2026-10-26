@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 
 #include "machinepanel.h"
+#include "notebookeditor.h"
 #include "previewcanvas.h"
 
 #include <QAction>
@@ -653,26 +654,44 @@ void MainWindow::updateTextPreview() {
 
 void MainWindow::buildTextDialog() {
     text_dialog_ = new QDialog(this);
-    text_dialog_->setWindowTitle(QStringLiteral("编辑文本"));
-    text_dialog_->resize(680, 560);
+    text_dialog_->setWindowTitle(QStringLiteral("编辑文本 · 横条本"));
+    text_dialog_->resize(760, 640);
 
     auto* layout = new QVBoxLayout(text_dialog_);
-    auto* tools = new QHBoxLayout;
-    auto* space_button = new QPushButton(QStringLiteral("插入全角空格"));
-    auto* indent_button = new QPushButton(QStringLiteral("首行缩进"));
-    auto* blank_button = new QPushButton(QStringLiteral("删除空行"));
-    tools->addWidget(space_button);
-    tools->addWidget(indent_button);
-    tools->addWidget(blank_button);
-    tools->addStretch();
-    layout->addLayout(tools);
 
-    text_dialog_editor_ = new QPlainTextEdit(text_dialog_);
+    auto* row1 = new QHBoxLayout;
+    auto* indent_button = new QPushButton(QStringLiteral("首行缩进"));
+    indent_button->setToolTip(QStringLiteral("每个自然段首行缩进两个全角空格"));
+    auto* first_para_button = new QPushButton(QStringLiteral("首段缩进"));
+    first_para_button->setToolTip(QStringLiteral("只给第一段加两个全角空格"));
+    auto* first_char_button = new QPushButton(QStringLiteral("首字缩进"));
+    first_char_button->setToolTip(QStringLiteral("每个自然段首字缩进一个全角空格"));
+    auto* center_first_button = new QPushButton(QStringLiteral("首行居中"));
+    center_first_button->setToolTip(QStringLiteral("把第一行按当前每行字数居中"));
+    row1->addWidget(indent_button);
+    row1->addWidget(first_para_button);
+    row1->addWidget(first_char_button);
+    row1->addWidget(center_first_button);
+    row1->addStretch();
+    layout->addLayout(row1);
+
+    auto* row2 = new QHBoxLayout;
+    auto* left_button = new QPushButton(QStringLiteral("左对齐"));
+    auto* center_button = new QPushButton(QStringLiteral("居中"));
+    auto* right_button = new QPushButton(QStringLiteral("右对齐"));
+    auto* space_button = new QPushButton(QStringLiteral("插入全角空格"));
+    auto* blank_button = new QPushButton(QStringLiteral("删除空行"));
+    row2->addWidget(left_button);
+    row2->addWidget(center_button);
+    row2->addWidget(right_button);
+    row2->addWidget(space_button);
+    row2->addWidget(blank_button);
+    row2->addStretch();
+    layout->addLayout(row2);
+
+    text_dialog_editor_ = new NotebookEditor(text_dialog_);
     text_dialog_editor_->setPlaceholderText(
-        QStringLiteral("在这里输入要书写的文字；空格会保留为空白字格"));
-    QFont font = text_dialog_editor_->font();
-    font.setPointSizeF(font.pointSizeF() + 3.0);
-    text_dialog_editor_->setFont(font);
+        QStringLiteral("在横线上输入文字；空格会保留为空白字格"));
     layout->addWidget(text_dialog_editor_, 1);
 
     text_dialog_stats_ = new QLabel(text_dialog_);
@@ -691,9 +710,31 @@ void MainWindow::buildTextDialog() {
     connect(buttons, &QDialogButtonBox::rejected, text_dialog_, &QDialog::reject);
     layout->addWidget(buttons);
 
-    connect(space_button, &QPushButton::clicked, this, [this] {
-        text_dialog_editor_->insertPlainText(QString(QChar(0x3000)));
-    });
+    // 统一对齐：先清掉行首缩进，再按当前每行字数补全角空格
+    auto reformat = [this](Qt::Alignment alignment) {
+        const int per_line = text_dialog_editor_->charsPerLine();
+        QStringList lines = text_dialog_editor_->toPlainText().split('\n');
+        for (QString& line : lines) {
+            while (!line.isEmpty() &&
+                   (line.at(0) == QChar(0x3000) || line.at(0) == QLatin1Char(' '))) {
+                line.remove(0, 1);
+            }
+            if (line.isEmpty()) {
+                continue;
+            }
+            int pad = 0;
+            if (alignment == Qt::AlignHCenter) {
+                pad = qMax(0, (per_line - line.length()) / 2);
+            } else if (alignment == Qt::AlignRight) {
+                pad = qMax(0, per_line - line.length());
+            }
+            if (pad > 0) {
+                line.prepend(QString(pad, QChar(0x3000)));
+            }
+        }
+        text_dialog_editor_->setPlainText(lines.join('\n'));
+    };
+
     connect(indent_button, &QPushButton::clicked, this, [this] {
         const QStringList lines = text_dialog_editor_->toPlainText().split('\n');
         QStringList out;
@@ -705,6 +746,57 @@ void MainWindow::buildTextDialog() {
             out.append(line);
         }
         text_dialog_editor_->setPlainText(out.join('\n'));
+    });
+    connect(first_para_button, &QPushButton::clicked, this, [this] {
+        QStringList lines = text_dialog_editor_->toPlainText().split('\n');
+        for (QString& line : lines) {
+            if (line.trimmed().isEmpty()) {
+                continue;
+            }
+            if (!line.startsWith(QChar(0x3000))) {
+                line.prepend(QString(QChar(0x3000)) + QString(QChar(0x3000)));
+            }
+            break;
+        }
+        text_dialog_editor_->setPlainText(lines.join('\n'));
+    });
+    connect(first_char_button, &QPushButton::clicked, this, [this] {
+        const QStringList lines = text_dialog_editor_->toPlainText().split('\n');
+        QStringList out;
+        out.reserve(lines.size());
+        for (QString line : lines) {
+            if (!line.trimmed().isEmpty() && !line.startsWith(QChar(0x3000))) {
+                line.prepend(QString(QChar(0x3000)));
+            }
+            out.append(line);
+        }
+        text_dialog_editor_->setPlainText(out.join('\n'));
+    });
+    connect(center_first_button, &QPushButton::clicked, this, [this] {
+        const int per_line = text_dialog_editor_->charsPerLine();
+        QStringList lines = text_dialog_editor_->toPlainText().split('\n');
+        if (lines.isEmpty()) {
+            return;
+        }
+        QString& first = lines[0];
+        while (!first.isEmpty() &&
+               (first.at(0) == QChar(0x3000) || first.at(0) == QLatin1Char(' '))) {
+            first.remove(0, 1);
+        }
+        const int pad = qMax(0, (per_line - first.length()) / 2);
+        if (pad > 0) {
+            first.prepend(QString(pad, QChar(0x3000)));
+        }
+        text_dialog_editor_->setPlainText(lines.join('\n'));
+    });
+    connect(left_button, &QPushButton::clicked, this,
+            [reformat] { reformat(Qt::AlignLeft); });
+    connect(center_button, &QPushButton::clicked, this,
+            [reformat] { reformat(Qt::AlignHCenter); });
+    connect(right_button, &QPushButton::clicked, this,
+            [reformat] { reformat(Qt::AlignRight); });
+    connect(space_button, &QPushButton::clicked, this, [this] {
+        text_dialog_editor_->insertPlainText(QString(QChar(0x3000)));
     });
     connect(blank_button, &QPushButton::clicked, this, [this] {
         const QStringList lines = text_dialog_editor_->toPlainText().split('\n');
@@ -749,6 +841,8 @@ void MainWindow::editText() {
     if (text_dialog_editor_ == nullptr) {
         return;
     }
+    text_dialog_editor_->setCharsPerLine(
+        handwriting::layout::resolve_chars_per_line(layoutSettings()));
     text_dialog_editor_->setPlainText(text_edit_->toPlainText());
     updateTextDialogStats();
     text_dialog_editor_->moveCursor(QTextCursor::End);

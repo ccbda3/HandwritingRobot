@@ -19,6 +19,8 @@ add_executable(handwriting-studio
     src/main.cpp
     src/machinepanel.cpp
     src/machinepanel.h
+    src/notebookeditor.cpp
+    src/notebookeditor.h
     src/mainwindow.cpp
     src/mainwindow.h
     src/previewcanvas.cpp

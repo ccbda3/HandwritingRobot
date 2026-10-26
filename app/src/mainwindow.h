@@ -29,6 +29,7 @@ class QLabel;
 class QDialog;
 class QLineEdit;
 class QPlainTextEdit;
+class NotebookEditor;
 class QSpinBox;
 class QTimer;
 class QDockWidget;
@@ -101,7 +102,7 @@ private:
     QLabel* text_preview_{nullptr};
     QLabel* text_stats_{nullptr};
     QDialog* text_dialog_{nullptr};
-    QPlainTextEdit* text_dialog_editor_{nullptr};
+    NotebookEditor* text_dialog_editor_{nullptr};
     QLabel* text_dialog_stats_{nullptr};
     PreviewCanvas* canvas_{nullptr};
     QDialog* settings_dialog_{nullptr};

@@ -22,6 +22,17 @@ NotebookEditor::NotebookEditor(QWidget* parent) : QPlainTextEdit(parent) {
     font.setPointSizeF(14.0);
     setFont(font);
     setTabStopDistance(fontMetrics().horizontalAdvance(QChar(0x3000)));
+
+    // 应用是深色主题，直接继承会得到「白字 + 米色纸」= 看不见。
+    // 这里显式把纸面文字设为深色，选中态用浅蓝底。
+    QPalette palette = viewport()->palette();
+    palette.setColor(QPalette::Text, QColor(0x1a, 0x1a, 0x1a));
+    palette.setColor(QPalette::PlaceholderText, QColor(0x9a, 0x9a, 0x9a));
+    palette.setColor(QPalette::Highlight, QColor(0x67, 0xd4, 0xff));
+    palette.setColor(QPalette::HighlightedText, QColor(0x10, 0x10, 0x10));
+    viewport()->setPalette(palette);
+    setPalette(palette);
+
     rebuildPaper();
 }
 

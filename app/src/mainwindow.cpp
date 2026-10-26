@@ -121,7 +121,7 @@ void MainWindow::buildUi() {
     panel_layout->setContentsMargins(10, 10, 10, 10);
     panel_layout->setSpacing(10);
 
-    // ---- 文本：主界面只放预览 + 打开独立编辑窗口 ----
+    // ---- 文本：主界面只留「编辑文本…」，文本修改统一在独立窗口 ----
     text_edit_ = new QPlainTextEdit(QString::fromUtf8(kDefaultText), this);
     text_edit_->hide();
     connect(text_edit_, &QPlainTextEdit::textChanged, this, &MainWindow::scheduleRefresh);
@@ -129,13 +129,6 @@ void MainWindow::buildUi() {
 
     auto* text_group = new QGroupBox(QStringLiteral("文本"));
     auto* text_layout = new QVBoxLayout(text_group);
-    text_preview_ = new QLabel;
-    text_preview_->setWordWrap(true);
-    text_preview_->setMinimumHeight(64);
-    text_preview_->setStyleSheet(QStringLiteral(
-        "QLabel { background:#ffffff; border:1px solid #d0d0d0; border-radius:4px; "
-        "padding:6px; color:#333; }"));
-    text_layout->addWidget(text_preview_);
 
     text_stats_ = new QLabel;
     text_stats_->setStyleSheet(QStringLiteral("color:#8a8a96;"));
@@ -144,6 +137,11 @@ void MainWindow::buildUi() {
     auto* edit_text_button = new QPushButton(QStringLiteral("编辑文本…"));
     connect(edit_text_button, &QPushButton::clicked, this, &MainWindow::editText);
     text_layout->addWidget(edit_text_button);
+
+    auto* text_hint = new QLabel(QStringLiteral("文本修改统一在独立窗口里进行。"));
+    text_hint->setWordWrap(true);
+    text_hint->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    text_layout->addWidget(text_hint);
 
     panel_layout->addWidget(text_group);
     updateTextPreview();
@@ -630,22 +628,11 @@ void MainWindow::commitCellEdit() {
 }
 
 void MainWindow::updateTextPreview() {
-    if (text_edit_ == nullptr || text_preview_ == nullptr) {
+    if (text_edit_ == nullptr) {
         return;
     }
     const QString text = text_edit_->toPlainText();
     const QStringList lines = text.split('\n');
-    QString preview;
-    for (int i = 0; i < qMin(2, lines.size()); ++i) {
-        if (i > 0) {
-            preview += '\n';
-        }
-        preview += lines[i];
-    }
-    if (lines.size() > 2) {
-        preview += QStringLiteral("\n…");
-    }
-    text_preview_->setText(preview.isEmpty() ? QStringLiteral("（空）") : preview);
     if (text_stats_ != nullptr) {
         text_stats_->setText(
             QStringLiteral("%1 字符 · %2 行").arg(text.size()).arg(lines.size()));

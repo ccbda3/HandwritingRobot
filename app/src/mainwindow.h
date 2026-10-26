@@ -99,7 +99,6 @@ private:
 
     // ---- 文本与画布 ----
     QPlainTextEdit* text_edit_{nullptr};  // 隐藏的文本模型，真正渲染用它
-    QLabel* text_preview_{nullptr};
     QLabel* text_stats_{nullptr};
     QDialog* text_dialog_{nullptr};
     NotebookEditor* text_dialog_editor_{nullptr};

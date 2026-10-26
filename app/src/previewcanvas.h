@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QPointF>
+#include <QRect>
 #include <QWidget>
 
 #include <vector>
@@ -38,8 +39,12 @@ public:
 
     [[nodiscard]] bool hasContent() const noexcept { return !glyphs_.empty(); }
 
+    // 字格在控件坐标系里的矩形，供 MainWindow 放行内编辑器
+    [[nodiscard]] QRect cellRectInWidget(int index) const;
+
 signals:
     void zoomChanged(double scale);
+    void cellActivated(int index);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -71,4 +76,6 @@ private:
 
     bool panning_{false};
     QPoint last_mouse_;
+    QPoint press_pos_;
+    bool press_moved_{false};
 };

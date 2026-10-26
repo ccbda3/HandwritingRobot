@@ -8,6 +8,7 @@
 // 除抖动外，其余所有几何结果两侧应当完全一致。
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <random>
 #include <string>
@@ -47,6 +48,10 @@ struct Result {
     std::vector<std::vector<StrokeSet>> rows;
     std::vector<std::string> missing;
     std::vector<std::string> failures;  // 与 missing 一一对应的原因
+
+    // 与 rows 展平后一一对应：每个成功渲染的字在原文中的 UTF-8 字节偏移。
+    // 供 UI 做「点字格改原文」的精确定位（缺字/空白会跳过，不能按序号硬算）。
+    std::vector<std::size_t> source_offsets;
 
     [[nodiscard]] std::size_t char_count() const noexcept;
     [[nodiscard]] bool empty() const noexcept { return char_count() == 0; }

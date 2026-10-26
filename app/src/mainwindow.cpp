@@ -262,6 +262,24 @@ void MainWindow::buildUi() {
     });
     setCentralWidget(canvas_);
 
+    // 行内字格编辑器：点预览里的字格时浮在该格上，回车/失焦回写原文
+    cell_editor_ = new QLineEdit(canvas_);
+    cell_editor_->setVisible(false);
+    cell_editor_->setAlignment(Qt::AlignCenter);
+    cell_editor_->setMaxLength(1);
+    cell_editor_->setFrame(false);
+    cell_editor_->setStyleSheet(QStringLiteral(
+        "QLineEdit { background: rgba(255,255,255,0.92); border: 1px solid #c0392b; "
+        "border-radius: 2px; padding: 0; }"));
+    connect(cell_editor_, &QLineEdit::returnPressed, this, &MainWindow::commitCellEdit);
+    connect(cell_editor_, &QLineEdit::editingFinished, this, &MainWindow::commitCellEdit);
+    connect(canvas_, &PreviewCanvas::cellActivated, this, &MainWindow::beginCellEdit);
+    connect(canvas_, &PreviewCanvas::zoomChanged, this, [this](double) {
+        if (cell_editor_ != nullptr) {
+            cell_editor_->hide();
+        }
+    });
+
     for (QDoubleSpinBox* box :
          {page_width_, page_height_, char_size_, slant_, jitter_, pressure_amp_, feed_draw_,
           pen_up_z_, pen_down_z_}) {
@@ -433,6 +451,7 @@ MainWindow::Rendered MainWindow::renderNow() const {
         text_edit_->toPlainText().toStdString(), cache, render_settings, 0);
 
     out.missing = rendered.missing;
+    out.source_offsets = rendered.source_offsets;
 
     if (rendered.rows.empty()) {
         out.ok = false;
@@ -470,6 +489,7 @@ void MainWindow::scheduleRefresh() {
 
 void MainWindow::refresh() {
     const Rendered rendered = renderNow();
+    last_rendered_ = rendered;
 
     if (!rendered.ok) {
         canvas_->clearContent();
@@ -487,6 +507,56 @@ void MainWindow::refresh() {
     updateStatus(rendered);
     if (machine_panel_ != nullptr) {
         machine_panel_->notifyProgramChanged();
+    }
+}
+
+void MainWindow::beginCellEdit(int index) {
+    if (index < 0 ||
+        static_cast<std::size_t>(index) >= last_rendered_.source_offsets.size() ||
+        static_cast<std::size_t>(index) >= last_rendered_.glyphs.size()) {
+        return;
+    }
+    const QRect rect = canvas_->cellRectInWidget(index);
+    if (!rect.isValid() || rect.width() < 6 || rect.height() < 6) {
+        return;
+    }
+    edit_index_ = index;
+    cell_editor_->setGeometry(rect.adjusted(1, 1, -1, -1));
+    cell_editor_->setText(QString::fromStdString(
+        last_rendered_.glyphs[static_cast<std::size_t>(index)].character()));
+    cell_editor_->selectAll();
+    cell_editor_->show();
+    cell_editor_->raise();
+    cell_editor_->setFocus();
+}
+
+void MainWindow::commitCellEdit() {
+    if (!cell_editor_->isVisible()) {
+        return;
+    }
+    const QString value = cell_editor_->text().trimmed();
+    cell_editor_->hide();
+    const int index = edit_index_;
+    edit_index_ = -1;
+    if (index < 0 || value.isEmpty() ||
+        static_cast<std::size_t>(index) >= last_rendered_.source_offsets.size()) {
+        return;
+    }
+
+    // source_offsets 是 UTF-8 字节偏移；转成 QString 位置再替换，避免中文/缺字错位
+    const std::size_t offset =
+        last_rendered_.source_offsets[static_cast<std::size_t>(index)];
+    const QString current = text_edit_->toPlainText();
+    const QString prefix =
+        QString::fromStdString(current.toStdString().substr(0, offset));
+    const int position = prefix.size();
+    if (position < 0 || position >= current.size()) {
+        return;
+    }
+    QString updated = current;
+    updated.replace(position, 1, value.left(1));
+    if (updated != current) {
+        text_edit_->setPlainText(updated);  // textChanged 会触发 scheduleRefresh
     }
 }
 

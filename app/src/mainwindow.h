@@ -47,6 +47,8 @@ public:
 private slots:
     void scheduleRefresh();
     void refresh();
+    void beginCellEdit(int index);
+    void commitCellEdit();
     void resetLayoutDefaults();
     void exportGcode();
     void exportPreviewImage();
@@ -58,6 +60,7 @@ private:
         handwriting::layout::Page page;
         std::vector<handwriting::StrokeSet> glyphs;
         std::vector<std::string> missing;
+        std::vector<std::size_t> source_offsets;
         std::string missing_detail;
         bool ok{false};
         QString error;
@@ -83,6 +86,9 @@ private:
     // ---- 文本与画布 ----
     QPlainTextEdit* text_edit_{nullptr};
     PreviewCanvas* canvas_{nullptr};
+    QLineEdit* cell_editor_{nullptr};
+    int edit_index_{-1};
+    Rendered last_rendered_;
 
     // ---- 版面 ----
     QComboBox* mode_combo_{nullptr};

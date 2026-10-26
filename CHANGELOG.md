@@ -31,6 +31,10 @@
 
 ### 新增
 
+- **Qt 预览内直接编辑**（`app/src/previewcanvas.*`、`app/src/mainwindow.*`）：
+  点预览里的字格弹出红色行内输入框，回车/失焦回写左侧文本并重排；
+  拖动仍是平移，短按才触发编辑。`render::Result` 新增 `source_offsets`
+  （每个字在原文的 UTF-8 字节偏移），空格/缺字跳过时改字也不会串位。
 - **开发者模式**（`scripts/serve_dev.py`、`scripts/dev_ui.html`）：粘贴文章，
   右侧实时显示模型推理 + 排版；**可直接点字出光标编辑**（输入替换、方向键移动、
   Enter 换行、Backspace 删字），左侧文本与右侧排版双向同步。

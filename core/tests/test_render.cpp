@@ -1,7 +1,10 @@
 // 渲染测试：倾斜、抖动、笔压、时序。与 Python 侧 tests/test_render.py 对应。
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <random>
+#include <string>
 #include <vector>
 
 #include "check.hpp"
@@ -234,6 +237,30 @@ int main() {
         for (const Stroke& stroke : result.strokes()) {
             HR_CHECK(stroke.points().front().t == 0);
         }
+    }
+
+    {
+        // source_offsets：空格跳过，但偏移必须按原文算，UI 改字才能定位
+        const auto dir =
+            std::filesystem::temp_directory_path() / "hr-render-offsets";
+        std::filesystem::create_directories(dir);
+        const std::string glyph_json =
+            R"({"strokes":["M 0 0 L 10 10 Z"],"medians":[[[428,824],[503,781]]],"radStrokes":[0]})";
+        {
+            std::ofstream(dir / "U+6625.json") << glyph_json;  // 春
+            std::ofstream(dir / "U+7720.json") << glyph_json;  // 眠
+        }
+        const handwriting::glyph::GlyphCache cache(dir);
+        const auto result =
+            handwriting::render::render_text("春 眠", cache, Settings{}, 0);
+        HR_CHECK(result.rows.size() == 1);
+        HR_CHECK(result.source_offsets.size() == 2);
+        if (result.source_offsets.size() == 2) {
+            HR_CHECK(result.source_offsets[0] == 0);
+            HR_CHECK(result.source_offsets[1] == 4);  // 春 3 字节 + 空格 1 字节
+        }
+        std::error_code error;
+        std::filesystem::remove_all(dir, error);
     }
 
     return hrtest::summary("render");

@@ -165,7 +165,11 @@ Result render_text(const std::string& text, const glyph::GlyphCache& cache,
         }
     };
 
+    std::size_t offset = 0;
     for (const std::string& character : utf8::split(text)) {
+        const std::size_t char_offset = offset;
+        offset += character.size();
+
         if (character == "\n") {
             flush();
             continue;
@@ -179,6 +183,7 @@ Result render_text(const std::string& text, const glyph::GlyphCache& cache,
 
         try {
             current.push_back(render_glyph(cache.load(character), settings, rng));
+            result.source_offsets.push_back(char_offset);
         } catch (const std::exception& error) {
             if (std::find(result.missing.begin(), result.missing.end(), character) ==
                 result.missing.end()) {

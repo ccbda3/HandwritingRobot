@@ -105,6 +105,16 @@ void PreviewCanvas::zoomToFit() {
     update();
 }
 
+QRect PreviewCanvas::cellRectInWidget(int index) const {
+    if (index < 0 || static_cast<std::size_t>(index) >= page_.cells.size()) {
+        return {};
+    }
+    const auto& cell = page_.cells[static_cast<std::size_t>(index)];
+    return QRect(qRound(origin_.x() + cell.x_mm * scale_),
+                 qRound(origin_.y() + cell.y_mm * scale_),
+                 qRound(cell.size_mm * scale_), qRound(cell.size_mm * scale_));
+}
+
 void PreviewCanvas::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     // 控件初始尺寸是 minimumSize，首次刷新时算出来的缩放会偏小。
@@ -277,8 +287,10 @@ void PreviewCanvas::wheelEvent(QWheelEvent* event) {
 void PreviewCanvas::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton && page_.width_mm > 0.0) {
         panning_ = true;
+        press_moved_ = false;
+        press_pos_ = event_position(event);
         auto_fit_ = false;  // 用户已手动平移，不再跟随窗口大小
-        last_mouse_ = event_position(event);
+        last_mouse_ = press_pos_;
         setCursor(Qt::ClosedHandCursor);
     }
 }
@@ -288,6 +300,10 @@ void PreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
         return;
     }
     const QPoint position = event_position(event);
+    if (qAbs(position.x() - press_pos_.x()) > 3 ||
+        qAbs(position.y() - press_pos_.y()) > 3) {
+        press_moved_ = true;
+    }
     const QPoint delta = position - last_mouse_;
     last_mouse_ = position;
     origin_ += QPointF(delta.x(), delta.y());
@@ -295,8 +311,26 @@ void PreviewCanvas::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void PreviewCanvas::mouseReleaseEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton) {
-        panning_ = false;
-        setCursor(Qt::OpenHandCursor);
+    if (event->button() != Qt::LeftButton) {
+        return;
+    }
+    const bool was_panning = panning_;
+    panning_ = false;
+    setCursor(Qt::OpenHandCursor);
+
+    // 没拖动才算「点击字格」；拖动仍然是平移
+    if (!was_panning || press_moved_ || page_.width_mm <= 0.0) {
+        return;
+    }
+    const QPoint position = event_position(event);
+    const double mm_x = (position.x() - origin_.x()) / scale_;
+    const double mm_y = (position.y() - origin_.y()) / scale_;
+    for (int index = 0; index < static_cast<int>(page_.cells.size()); ++index) {
+        const auto& cell = page_.cells[static_cast<std::size_t>(index)];
+        if (mm_x >= cell.x_mm && mm_x <= cell.x_mm + cell.size_mm &&
+            mm_y >= cell.y_mm && mm_y <= cell.y_mm + cell.size_mm) {
+            emit cellActivated(index);
+            break;
+        }
     }
 }

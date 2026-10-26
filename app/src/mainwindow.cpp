@@ -683,8 +683,10 @@ void MainWindow::updateTextPreview() {
         lines += qMax(1, (length + per_line - 1) / per_line);
     }
     if (text_stats_ != nullptr) {
+        const int chars =
+            static_cast<int>(text.size()) - static_cast<int>(text.count('\n'));
         text_stats_->setText(
-            QStringLiteral("%1 字符 · %2 行").arg(text.size()).arg(lines));
+            QStringLiteral("%1 字符 · %2 行").arg(chars).arg(lines));
     }
 }
 

@@ -105,6 +105,8 @@ python scripts/serve_dev.py --model data/exports/style-model.pt \
   输出 Δ点 / 抬落笔 / 压感；`train_sequences` / `generate_stroke`。
   目前用合成数据自测，真实训练等行数据；推理最终要按 ADR-0007 落到 C++。
 
+![整行风格：字大小/基线波动，横条本仍压线](images/line-style.png)
+
 ## 限制（v0 明确不做的事）
 
 - **不建模笔间抬落笔**：笔画之间固定抬笔，不学连笔。

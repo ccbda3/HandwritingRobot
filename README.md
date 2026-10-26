@@ -25,7 +25,8 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 
 ## 当前状态
 
-**Pre-Alpha。** 采集链路、字形 → G 代码链路已跑通，风格模型尚未开始。
+**Pre-Alpha。** 采集、字形 → G 代码、风格模型 v0、整行风格版面层、骨架对齐、
+序列模型骨架均已跑通；真实个人风格训练待数位板行数据。
 
 | 模块 | 状态 |
 |---|---|
@@ -48,6 +49,20 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 | 序列模型骨架（GRU + MDN，Δ点/抬落笔/压感） | 可用（骨架） |
 | 开发者模式（文章实时推理 + 排版 + 预览内编辑） | 可用 |
 | 运动约束优化（论文核心） | 未开始 |
+
+## 界面
+
+主界面只保留高频项：文本、常用版面、整行风格；低频设置收进「选项」弹窗。
+
+<img src="docs/images/main-window.png" width="860" alt="主界面">
+
+| 选项弹窗 | 横条本文本编辑 |
+|---|---|
+| <img src="docs/images/options-dialog.png" width="360" alt="选项弹窗"> | <img src="docs/images/text-editor.png" width="420" alt="横条本文本编辑"> |
+
+「整行风格」开启后，字大小与基线会有统计波动，横条本仍压在横线上：
+
+<img src="docs/images/line-style.png" width="860" alt="整行风格">
 
 ## 风格模型 v0（可选，需要 torch）
 

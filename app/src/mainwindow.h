@@ -44,9 +44,12 @@ public:
     /// 仅供快照/演示：注入已标定边界与机头位置。
     void setDemoWorkspace(const handwriting::bounds::Workspace& ws);
     void setDemoHead(double x, double y);
+    void setDemoText(const QString& text);
 
     /// 仅供快照：拿到选项弹窗指针。
     [[nodiscard]] QDialog* settingsDialog() const noexcept { return settings_dialog_; }
+    /// 仅供快照：拿到文本编辑弹窗指针（首次打开后才有）。
+    [[nodiscard]] QDialog* textDialog() const noexcept { return text_dialog_; }
 
 private slots:
     void scheduleRefresh();
@@ -54,6 +57,8 @@ private slots:
     void beginCellEdit(int index);
     void commitCellEdit();
     void showSettings();
+    void editText();
+    void updateTextPreview();
     void resetLayoutDefaults();
     void exportGcode();
     void exportPreviewImage();
@@ -74,6 +79,9 @@ private:
     void buildUi();
     void buildMenus();
     void buildStatusBar();
+    void buildTextDialog();
+    void applyTextDialog();
+    void updateTextDialogStats();
 
     [[nodiscard]] handwriting::render::Settings renderSettings() const;
     [[nodiscard]] handwriting::layout::Settings layoutSettings() const;
@@ -89,7 +97,12 @@ private:
     void updateModeEnabled();
 
     // ---- 文本与画布 ----
-    QPlainTextEdit* text_edit_{nullptr};
+    QPlainTextEdit* text_edit_{nullptr};  // 隐藏的文本模型，真正渲染用它
+    QLabel* text_preview_{nullptr};
+    QLabel* text_stats_{nullptr};
+    QDialog* text_dialog_{nullptr};
+    QPlainTextEdit* text_dialog_editor_{nullptr};
+    QLabel* text_dialog_stats_{nullptr};
     PreviewCanvas* canvas_{nullptr};
     QDialog* settings_dialog_{nullptr};
     QLineEdit* cell_editor_{nullptr};

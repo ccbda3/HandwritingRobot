@@ -240,7 +240,7 @@ int main() {
     }
 
     {
-        // source_offsets：空格跳过，但偏移必须按原文算，UI 改字才能定位
+        // 空格保留为空字格；source_offsets 按原文 UTF-8 字节偏移
         const auto dir =
             std::filesystem::temp_directory_path() / "hr-render-offsets";
         std::filesystem::create_directories(dir);
@@ -254,10 +254,13 @@ int main() {
         const auto result =
             handwriting::render::render_text("春 眠", cache, Settings{}, 0);
         HR_CHECK(result.rows.size() == 1);
-        HR_CHECK(result.source_offsets.size() == 2);
-        if (result.source_offsets.size() == 2) {
+        HR_CHECK(result.rows[0].size() == 3);
+        HR_CHECK(result.rows[0][1].strokes().empty());
+        HR_CHECK(result.source_offsets.size() == 3);
+        if (result.source_offsets.size() == 3) {
             HR_CHECK(result.source_offsets[0] == 0);
-            HR_CHECK(result.source_offsets[1] == 4);  // 春 3 字节 + 空格 1 字节
+            HR_CHECK(result.source_offsets[1] == 3);  // 空格
+            HR_CHECK(result.source_offsets[2] == 4);  // 眠
         }
         std::error_code error;
         std::filesystem::remove_all(dir, error);

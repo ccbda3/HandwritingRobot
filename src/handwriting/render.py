@@ -241,11 +241,13 @@ def render_text(
                 rows.append(current)
                 current = []
             continue
-        if char.isspace():
-            continue
         if chars_per_line and len(current) >= chars_per_line:
             rows.append(current)
             current = []
+        if char.isspace():
+            # 空白保留为空字格：占位但不画笔画
+            current.append(StrokeSet([], " "))
+            continue
 
         try:
             glyph = active.load(char)

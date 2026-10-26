@@ -29,7 +29,9 @@
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStringList>
 #include <QTabWidget>
+#include <QTextCursor>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
@@ -118,19 +120,32 @@ void MainWindow::buildUi() {
     panel_layout->setContentsMargins(10, 10, 10, 10);
     panel_layout->setSpacing(10);
 
-    // ---- 文本 ----
-    text_edit_ = new QPlainTextEdit(QString::fromUtf8(kDefaultText));
-    text_edit_->setPlaceholderText(QStringLiteral("在这里输入要书写的文字"));
-    text_edit_->setMinimumHeight(110);
-    QFont text_font = text_edit_->font();
-    text_font.setPointSizeF(text_font.pointSizeF() + 3.0);
-    text_edit_->setFont(text_font);
+    // ---- 文本：主界面只放预览 + 打开独立编辑窗口 ----
+    text_edit_ = new QPlainTextEdit(QString::fromUtf8(kDefaultText), this);
+    text_edit_->hide();
     connect(text_edit_, &QPlainTextEdit::textChanged, this, &MainWindow::scheduleRefresh);
+    connect(text_edit_, &QPlainTextEdit::textChanged, this, &MainWindow::updateTextPreview);
 
     auto* text_group = new QGroupBox(QStringLiteral("文本"));
     auto* text_layout = new QVBoxLayout(text_group);
-    text_layout->addWidget(text_edit_);
+    text_preview_ = new QLabel;
+    text_preview_->setWordWrap(true);
+    text_preview_->setMinimumHeight(64);
+    text_preview_->setStyleSheet(QStringLiteral(
+        "QLabel { background:#ffffff; border:1px solid #d0d0d0; border-radius:4px; "
+        "padding:6px; color:#333; }"));
+    text_layout->addWidget(text_preview_);
+
+    text_stats_ = new QLabel;
+    text_stats_->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    text_layout->addWidget(text_stats_);
+
+    auto* edit_text_button = new QPushButton(QStringLiteral("编辑文本…"));
+    connect(edit_text_button, &QPushButton::clicked, this, &MainWindow::editText);
+    text_layout->addWidget(edit_text_button);
+
     panel_layout->addWidget(text_group);
+    updateTextPreview();
 
     // ---- 常用版面（主界面只留高频项） ----
     auto* common_group = new QGroupBox(QStringLiteral("常用版面"));
@@ -613,6 +628,133 @@ void MainWindow::commitCellEdit() {
     }
 }
 
+void MainWindow::updateTextPreview() {
+    if (text_edit_ == nullptr || text_preview_ == nullptr) {
+        return;
+    }
+    const QString text = text_edit_->toPlainText();
+    const QStringList lines = text.split('\n');
+    QString preview;
+    for (int i = 0; i < qMin(2, lines.size()); ++i) {
+        if (i > 0) {
+            preview += '\n';
+        }
+        preview += lines[i];
+    }
+    if (lines.size() > 2) {
+        preview += QStringLiteral("\n…");
+    }
+    text_preview_->setText(preview.isEmpty() ? QStringLiteral("（空）") : preview);
+    if (text_stats_ != nullptr) {
+        text_stats_->setText(
+            QStringLiteral("%1 字符 · %2 行").arg(text.size()).arg(lines.size()));
+    }
+}
+
+void MainWindow::buildTextDialog() {
+    text_dialog_ = new QDialog(this);
+    text_dialog_->setWindowTitle(QStringLiteral("编辑文本"));
+    text_dialog_->resize(680, 560);
+
+    auto* layout = new QVBoxLayout(text_dialog_);
+    auto* tools = new QHBoxLayout;
+    auto* space_button = new QPushButton(QStringLiteral("插入全角空格"));
+    auto* indent_button = new QPushButton(QStringLiteral("首行缩进"));
+    auto* blank_button = new QPushButton(QStringLiteral("删除空行"));
+    tools->addWidget(space_button);
+    tools->addWidget(indent_button);
+    tools->addWidget(blank_button);
+    tools->addStretch();
+    layout->addLayout(tools);
+
+    text_dialog_editor_ = new QPlainTextEdit(text_dialog_);
+    text_dialog_editor_->setPlaceholderText(
+        QStringLiteral("在这里输入要书写的文字；空格会保留为空白字格"));
+    QFont font = text_dialog_editor_->font();
+    font.setPointSizeF(font.pointSizeF() + 3.0);
+    text_dialog_editor_->setFont(font);
+    layout->addWidget(text_dialog_editor_, 1);
+
+    text_dialog_stats_ = new QLabel(text_dialog_);
+    text_dialog_stats_->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    layout->addWidget(text_dialog_stats_);
+
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, text_dialog_);
+    if (auto* ok = buttons->button(QDialogButtonBox::Ok)) {
+        ok->setText(QStringLiteral("确定"));
+    }
+    if (auto* cancel = buttons->button(QDialogButtonBox::Cancel)) {
+        cancel->setText(QStringLiteral("取消"));
+    }
+    connect(buttons, &QDialogButtonBox::accepted, this, &MainWindow::applyTextDialog);
+    connect(buttons, &QDialogButtonBox::rejected, text_dialog_, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    connect(space_button, &QPushButton::clicked, this, [this] {
+        text_dialog_editor_->insertPlainText(QString(QChar(0x3000)));
+    });
+    connect(indent_button, &QPushButton::clicked, this, [this] {
+        const QStringList lines = text_dialog_editor_->toPlainText().split('\n');
+        QStringList out;
+        out.reserve(lines.size());
+        for (QString line : lines) {
+            if (!line.trimmed().isEmpty() && !line.startsWith(QChar(0x3000))) {
+                line.prepend(QString(QChar(0x3000)) + QString(QChar(0x3000)));
+            }
+            out.append(line);
+        }
+        text_dialog_editor_->setPlainText(out.join('\n'));
+    });
+    connect(blank_button, &QPushButton::clicked, this, [this] {
+        const QStringList lines = text_dialog_editor_->toPlainText().split('\n');
+        QStringList out;
+        for (const QString& line : lines) {
+            if (!line.trimmed().isEmpty()) {
+                out.append(line);
+            }
+        }
+        text_dialog_editor_->setPlainText(out.join('\n'));
+    });
+    connect(text_dialog_editor_, &QPlainTextEdit::textChanged, this,
+            &MainWindow::updateTextDialogStats);
+}
+
+void MainWindow::applyTextDialog() {
+    if (text_edit_ == nullptr || text_dialog_editor_ == nullptr) {
+        return;
+    }
+    text_edit_->setPlainText(text_dialog_editor_->toPlainText());
+    if (text_dialog_ != nullptr) {
+        text_dialog_->accept();
+    }
+}
+
+void MainWindow::updateTextDialogStats() {
+    if (text_dialog_editor_ == nullptr || text_dialog_stats_ == nullptr) {
+        return;
+    }
+    const QString text = text_dialog_editor_->toPlainText();
+    const int lines = text.count('\n') + 1;
+    text_dialog_stats_->setText(
+        QStringLiteral("%1 字符 · %2 行（空格保留为空白字格）")
+            .arg(text.size())
+            .arg(lines));
+}
+
+void MainWindow::editText() {
+    if (text_dialog_ == nullptr) {
+        buildTextDialog();
+    }
+    if (text_dialog_editor_ == nullptr) {
+        return;
+    }
+    text_dialog_editor_->setPlainText(text_edit_->toPlainText());
+    updateTextDialogStats();
+    text_dialog_editor_->moveCursor(QTextCursor::End);
+    text_dialog_->exec();
+}
+
 void MainWindow::updateStatus(const Rendered& rendered) {
     std::size_t strokes = 0;
     std::size_t points = 0;
@@ -756,5 +898,11 @@ void MainWindow::setDemoWorkspace(const handwriting::bounds::Workspace& ws) {
 void MainWindow::setDemoHead(double x, double y) {
     if (machine_panel_ != nullptr) {
         machine_panel_->setDemoHead(x, y);
+    }
+}
+
+void MainWindow::setDemoText(const QString& text) {
+    if (text_edit_ != nullptr) {
+        text_edit_->setPlainText(text);
     }
 }

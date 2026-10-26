@@ -174,11 +174,14 @@ Result render_text(const std::string& text, const glyph::GlyphCache& cache,
             flush();
             continue;
         }
-        if (utf8::is_space(utf8::first_codepoint(character))) {
-            continue;
-        }
         if (chars_per_line > 0 && static_cast<int>(current.size()) >= chars_per_line) {
             flush();
+        }
+        if (utf8::is_space(utf8::first_codepoint(character))) {
+            // 空白保留为一个空字格：排版会占位，预览/G 代码不画任何笔画。
+            current.push_back(StrokeSet({}, " "));
+            result.source_offsets.push_back(char_offset);
+            continue;
         }
 
         try {

@@ -216,9 +216,11 @@ class TestRenderText:
         result = render_text("永西叶好冬花", FakeSource("永西叶好冬花"), chars_per_line=2)
         assert [len(row) for row in result.rows] == [2, 2, 2]
 
-    def test_whitespace_is_skipped(self) -> None:
+    def test_whitespace_becomes_a_blank_cell(self) -> None:
         result = render_text("永 西\t叶", FakeSource("永西叶"))
-        assert result.char_count == 3
+        assert result.char_count == 5
+        assert result.rows[0][1].strokes == []
+        assert result.rows[0][3].strokes == []
 
     def test_missing_characters_are_skipped_not_fatal(self) -> None:
         """生僻字或标点缺失不该让整段文本渲染不出来。"""

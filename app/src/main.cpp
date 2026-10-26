@@ -90,24 +90,37 @@ int main(int argc, char* argv[]) {
     if (have_head) {
         window.setDemoHead(demo_hx, demo_hy);
     }
+    const int ti = arguments.indexOf(QStringLiteral("--demo-text"));
+    if (ti >= 0 && ti + 1 < arguments.size()) {
+        window.setDemoText(arguments.at(ti + 1));
+    }
 
     const bool snapshot_settings =
         snapshot_mode && arguments.contains(QStringLiteral("--snapshot-settings"));
+    const bool snapshot_text =
+        snapshot_mode && arguments.contains(QStringLiteral("--snapshot-text"));
     if (snapshot_settings) {
         QMetaObject::invokeMethod(&window, "showSettings", Qt::QueuedConnection);
+    }
+    if (snapshot_text) {
+        QMetaObject::invokeMethod(&window, "editText", Qt::QueuedConnection);
     }
 
     if (snapshot_mode) {
         const QString path = arguments.at(index + 1);
         // 等一拍让延迟刷新定时器跑完、布局稳定下来
-        QTimer::singleShot(600, &window, [&window, path, snapshot_settings]() {
-            QWidget* target = &window;
-            if (snapshot_settings && window.settingsDialog() != nullptr) {
-                target = window.settingsDialog();
-            }
-            const bool ok = target->grab().save(path);
-            QApplication::exit(ok ? 0 : 1);
-        });
+        QTimer::singleShot(600, &window,
+                           [&window, path, snapshot_settings, snapshot_text]() {
+                               QWidget* target = &window;
+                               if (snapshot_text && window.textDialog() != nullptr) {
+                                   target = window.textDialog();
+                               } else if (snapshot_settings &&
+                                          window.settingsDialog() != nullptr) {
+                                   target = window.settingsDialog();
+                               }
+                               const bool ok = target->grab().save(path);
+                               QApplication::exit(ok ? 0 : 1);
+                           });
     }
 
     return QApplication::exec();

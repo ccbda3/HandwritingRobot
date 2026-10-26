@@ -91,6 +91,17 @@ G 代码生成 63.12 ms -> 37.42 ms（48000 点负载）。
 - 注释与文档用中文，**标识符用英文**
 - 注释写「为什么」，不写「做了什么」——代码本身已经说明了后者
 
+### 语言边界（重要）
+
+按 [ADR-0007](docs/adr/0007-runtime-in-cpp-python-for-training.md)：
+
+- **产品运行时**（`core/`、`app/`、发布产物）只写 **C++17**。
+- **Python** 只用于训练（PyTorch）与开发期工具（`scripts/`、采集器）。
+- 新增运行时功能：**先写 C++ + 测试**；Python 版本只能作为训练期参考。
+- 开发工具需要推理 / 排版时，优先调用 C++ 核心，不得把 Python 运行时逻辑带进发布路径。
+- 模型权重由 Python 导出 `handwriting-style-model/1` JSON，C++ `style::Model` 加载；
+  改动任一侧必须跑 `hr-style-dump` 对拍（当前误差 < 1e-6）。
+
 ### C++
 
 - C++17，禁止编译器扩展（`CMAKE_CXX_EXTENSIONS OFF`）

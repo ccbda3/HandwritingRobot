@@ -288,6 +288,13 @@ def _build_parser() -> argparse.ArgumentParser:
     s_source.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     s_source.add_argument("--offline", action="store_true")
 
+    # ---- export-weights：训练检查点 → C++ 可读 JSON ------------------------
+    export_p = subparsers.add_parser("export-weights", help="把训练检查点导出为 C++ 可读的 JSON")
+    export_p.add_argument("--model", type=Path, required=True)
+    export_p.add_argument(
+        "-o", "--output", type=Path, default=Path("data/exports/style-model.json")
+    )
+
     return parser
 
 
@@ -829,6 +836,41 @@ def _cmd_stylize(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_export_weights(args: argparse.Namespace) -> int:
+    """训练检查点 → C++ 可读 JSON（ADR-0007 的权重交接点）。"""
+    from handwriting.model.data import RESIDUAL_SCALE
+    from handwriting.model.train import load_checkpoint
+
+    if not args.model.is_file():
+        print(f"错误：找不到模型 {args.model}")
+        return EXIT_ERROR
+    model, config, meta = load_checkpoint(args.model, "cpu")
+
+    def layer(linear) -> dict:
+        return {
+            "weight": linear.weight.detach().tolist(),
+            "bias": linear.bias.detach().tolist(),
+        }
+
+    payload = {
+        "format": "handwriting-style-model/1",
+        "config": {
+            "n_points": config.n_points,
+            "smooth_window": config.smooth_window,
+            "hidden": config.hidden,
+            "mixtures": config.mixtures,
+            "residual_scale": RESIDUAL_SCALE,
+        },
+        "layers": [layer(model.trunk[0]), layer(model.trunk[2])],
+        "head": layer(model.out),
+        "meta": meta,
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload), encoding="utf-8")
+    print(f"已导出权重：{args.output}（{args.output.stat().st_size // 1024} KB）")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_stdout()
     parser = _build_parser()
@@ -846,6 +888,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_train(args)
     if args.command == "stylize":
         return _cmd_stylize(args)
+    if args.command == "export-weights":
+        return _cmd_export_weights(args)
 
     parser.error(f"未知子命令 {args.command!r}")
     return EXIT_ERROR  # pragma: no cover - argparse 会先退出

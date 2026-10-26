@@ -9,6 +9,12 @@
 
 ### 变更
 
+- **模型推理迁到 C++**（`core/src/style_model.cpp`、`core/include/handwriting/style_model.hpp`）：
+  按 ADR-0007，产品运行时不再依赖 Python。MLP 前向 + MDN 均值 + 残差应用全部在 C++；
+  Python 训练侧通过 `handwriting export-weights` 导出 `handwriting-style-model/1` JSON。
+  跨语言对拍工具 `hr-style-dump`，同一输入最大绝对误差 **1.14e-07**。
+- **ADR-0007**：运行时代码用 C++17，Python 仅用于训练与开发工具；
+  新增运行时功能先写 C++ + 测试。
 - **默认参数对齐本机（奎享雕刻实测配置）**：抬笔 Z=0、落笔 Z=6、书写进给 8000 mm/min、
   jog 步长 0.1 mm（取自 `settings/默认Grbl机器/Grbl.json`）。这台机器 **Z 越大越往下压**，
   与「Z 向上为正」相反。同时修掉手动「抬笔/落笔」按钮里**硬编码的 3.0/0.0**

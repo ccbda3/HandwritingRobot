@@ -42,7 +42,7 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 | Qt 桌面 UI | **可用**（参数面板 + 实时预览 + 导出 + **串口直连书写**） |
 | 串口 / GRBL 通信（C++ 核心） | 可用（流控、状态机、安全检查，118 项断言覆盖） |
 | 工作区标定（软限位） | 可用（4 步向导 + 示意图 + 越界保护） |
-| 笔迹风格模型 v0（残差 MDN，需 torch） | 可用 |
+| 笔迹风格模型 v0（训练 PyTorch / 推理 C++） | 可用 |
 | 运动约束优化（论文核心） | 未开始 |
 
 ## 风格模型 v0（可选，需要 torch）
@@ -69,6 +69,17 @@ handwriting stylize --svg-file drawing.svg --model data/exports/style-model.pt -
 **边界**：v0 学的是「相对中心线的局部风格」（倾斜、提按、抖动），
 不是完整的字形风格迁移；真实个人风格需要数位板数据，以及把采集笔画与
 标准骨架做对齐（下一步）。设计与限制见 [docs/model.md](docs/model.md)。
+
+**语言分工**：训练用 Python（PyTorch），**推理在产品运行时用 C++**
+（`core/src/style_model.cpp`，零 Python 依赖）。训练完导出权重：
+
+```bash
+handwriting export-weights --model data/exports/style-model.pt \
+  -o data/exports/style-model.json
+```
+
+跨语言对拍工具 `hr-style-dump`，当前最大误差 1.1e-07。规则见
+[ADR-0007](docs/adr/0007-runtime-in-cpp-python-for-training.md)。
 
 ## 快速开始
 

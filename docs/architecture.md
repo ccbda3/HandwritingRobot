@@ -15,10 +15,16 @@
 
 | 层 | 语言 | 职责 | 为什么 |
 |---|---|---|---|
-| `core/` | **C++17** | 轨迹数据结构、运动约束优化、G 代码生成、串口流式发送 | 交互式实时重算；发布版零 Python 依赖 |
+| `core/` | **C++17** | 轨迹数据结构、运动约束优化、G 代码生成、串口流式发送、**模型推理** | 交互式实时重算；发布版零 Python 依赖 |
 | `app/` | **C++17 + Qt** | 桌面 UI、预览渲染 | 直接链接 `core`，无子进程、无序列化开销 |
-| `src/handwriting/` | Python | 数据集分析、模型训练、实验与参数搜索 | PyTorch 生态只有 Python，CUDA kernel 库只服务 Python |
+| `src/handwriting/` | Python | 数据集分析、模型训练、实验与参数搜索（**仅训练期，不进入运行时**） | PyTorch 生态只有 Python，CUDA kernel 库只服务 Python |
 | `benchmarks/python/` | Python | 基线性能测量 | 为「是否移植到 C++」提供数据依据 |
+
+**执行规则（[ADR-0007](adr/0007-runtime-in-cpp-python-for-training.md)）**：
+产品运行时（`core/`、`app/`、发布产物）只写 C++17；Python 只做训练与开发工具，
+且不得把运行时逻辑带进发布路径。新增运行时功能先写 C++ + 测试，Python 版本仅作
+训练期参考。模型权重由 Python 导出为 `handwriting-style-model/1` JSON，
+C++ `style::Model` 加载，跨语言对拍误差 < 1e-6。
 
 ### 为什么不用纯 C
 

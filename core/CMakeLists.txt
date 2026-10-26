@@ -9,6 +9,7 @@ add_library(handwriting_core STATIC
     src/render.cpp
     src/serial_posix.cpp
     src/serial_win32.cpp
+    src/style_model.cpp
     src/trajectory.cpp
     src/utf8.cpp
 )
@@ -71,8 +72,16 @@ if(HR_BUILD_TESTS)
     target_link_libraries(test_bounds PRIVATE handwriting_core)
     add_test(NAME cpp.bounds COMMAND test_bounds)
 
+    add_executable(test_style_model tests/test_style_model.cpp)
+    target_link_libraries(test_style_model PRIVATE handwriting_core)
+    add_test(NAME cpp.style_model COMMAND test_style_model)
+
     # 版面导出工具。Python 侧调用它做跨语言一致性校验，
     # 防止 C++ 与 Python 两份版面实现悄悄漂移（见 ADR-0003 的后果一节）。
     add_executable(hr-layout-dump tools/layout_dump.cpp)
     target_link_libraries(hr-layout-dump PRIVATE handwriting_core)
+
+    # 风格模型推理的跨语言对拍工具（Python 训练侧调用）
+    add_executable(hr-style-dump tools/style_dump.cpp)
+    target_link_libraries(hr-style-dump PRIVATE handwriting_core)
 endif()

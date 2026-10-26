@@ -56,6 +56,23 @@ handwriting stylize --svg-file drawing.svg --model data/exports/style-model.pt -
 python scripts/make_style_compare.py --model data/exports/style-model.pt
 ```
 
+## 运行时：推理在 C++
+
+按 [ADR-0007](adr/0007-runtime-in-cpp-python-for-training.md)，产品运行时只用 C++：
+
+```bash
+# 训练（Python）
+handwriting train --chars "..." --offline -o data/exports/style-model.pt
+
+# 导出给 C++（JSON）
+handwriting export-weights --model data/exports/style-model.pt \
+  -o data/exports/style-model.json
+```
+
+C++ 侧调用 `handwriting::style::Model::load(json).stylize(stroke_set)`，
+实现见 `core/src/style_model.cpp`。Python 的 `model/generate.py` 保留为
+训练期参考实现；跨语言对拍工具 `hr-style-dump`，当前最大误差 **1.1e-07**。
+
 ## 限制（v0 明确不做的事）
 
 - **不建模笔间抬落笔**：笔画之间固定抬笔，不学连笔。
@@ -63,10 +80,11 @@ python scripts/make_style_compare.py --model data/exports/style-model.pt
 - **不重建字形整体比例**：只做相对中心线的局部变形。
 - **真实数据尚未骨架对齐**：所以现在只能用合成风格验证链路。
 - 逐点独立预测，`--sample` 时相邻点可能跳到不同混合分量；默认取均值避免跳点。
+- 推理已迁到 C++；Python 的 `generate.py` 只作训练期参考，不再进入产品路径。
 
 ## 下一步
 
 1. **骨架对齐**：把采集笔画映射到标准骨架，残差才是真正的个人风格。
 2. **序列模型**：RNN / Transformer 预测 `Δ` 点，显式建模抬落笔与速度。
 3. **风格向量**：few-shot 多风格（8 字起步），而不是一人一模型。
-4. **ONNX 导出 + C++ 推理**：摆脱 Python 运行时。
+4. **C++ 批量推理接入开发服务器**：让 dev server 走 `core`，彻底去掉 Python 推理。

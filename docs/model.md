@@ -95,13 +95,15 @@ python scripts/serve_dev.py --model data/exports/style-model.pt \
 |---|---|---|
 | 1. 版面风格 | 字大小、字距、基线抖动/倾斜 | **已实现**（`layout::compute_styled`，Qt「整行风格」） |
 | 2. 骨架对齐 | 把采集笔画映射到标准骨架，残差才是你的笔画风格 | **已实现**（`model/align.py`，`train --align`） |
-| 3. 序列模型 | 连笔、抬落笔、速度/节奏（飘逸） | 未开始 |
+| 3. 序列模型 | 连笔、抬落笔、速度/节奏（飘逸） | **最小骨架已实现**（`model/sequence.py`，合成数据自测；真实训练待数据） |
 
 - 版面层参数目前手动调；真实行数据到位后，可从 `LineStyleFeatures`
   （`char_width_cv` / `char_gap_cv` / `baseline_drift` / `baseline_slope`）自动估计。
 - 对齐用法：`handwriting train --data capture.json --align --offline`；
   1.0 单字与 2.0 整行都支持（2.0 需要 `charRanges` 才能切字）。
-- 第 3 层是「飘逸」的关键，需要真实行数据 + 序列模型。
+- 第 3 层骨架：`PenSequenceModel`（GRU + MDN）输入「下一段中心线 + 上一笔尖状态」，
+  输出 Δ点 / 抬落笔 / 压感；`train_sequences` / `generate_stroke`。
+  目前用合成数据自测，真实训练等行数据；推理最终要按 ADR-0007 落到 C++。
 
 ## 限制（v0 明确不做的事）
 

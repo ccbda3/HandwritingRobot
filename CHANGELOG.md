@@ -38,6 +38,9 @@
 
 ### 新增
 
+- **第 3 层序列模型骨架**（`src/handwriting/model/sequence.py`）：GRU + MDN 预测
+  Δ点 / 抬落笔 / 压感，`train_sequences` / `generate_stroke`；3 项测试。
+  目前用合成数据自测，真实训练等行数据；推理最终按 ADR-0007 落到 C++。
 - **骨架对齐**（`src/handwriting/model/align.py`、`train --align`）：等比 bbox 变换 +
   贪心笔画匹配 + 方向校正，把 1.0 单字 / 2.0 整行的采集字对齐到标准骨架，
   残差才是个人笔画风格；5 项对齐测试。

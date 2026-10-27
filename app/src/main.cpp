@@ -97,6 +97,9 @@ int main(int argc, char* argv[]) {
     if (arguments.contains(QStringLiteral("--demo-style"))) {
         window.setDemoStyle(true);
     }
+    if (arguments.contains(QStringLiteral("--demo-model"))) {
+        window.setDemoStyleModel(true);
+    }
 
     const bool snapshot_settings =
         snapshot_mode && arguments.contains(QStringLiteral("--snapshot-settings"));

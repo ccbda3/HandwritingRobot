@@ -40,6 +40,9 @@
 
 ### 新增
 
+- **Qt App 接入 v0 风格模型**：左栏「使用风格模型」开关 + 选项「风格模型」页
+  （权重 JSON、强度）；`renderNow` 对每个字调用 C++ `style::Model::stylize`，
+  预览与导出的 G 代码使用同一结果；加载失败回退标准骨架并在状态栏提示。
 - **第 3 层序列模型骨架**（`src/handwriting/model/sequence.py`）：GRU + MDN 预测
   Δ点 / 抬落笔 / 压感，`train_sequences` / `generate_stroke`；3 项测试。
   目前用合成数据自测，真实训练等行数据；推理最终按 ADR-0007 落到 C++。

@@ -47,6 +47,7 @@ public:
     void setDemoHead(double x, double y);
     void setDemoText(const QString& text);
     void setDemoStyle(bool enabled);
+    void setDemoStyleModel(bool enabled);
 
     /// 仅供快照：拿到选项弹窗指针。
     [[nodiscard]] QDialog* settingsDialog() const noexcept { return settings_dialog_; }
@@ -76,6 +77,7 @@ private:
         std::string missing_detail;
         bool ok{false};
         QString error;
+        QString style_warning;
     };
 
     void buildUi();
@@ -120,6 +122,9 @@ private:
     QDoubleSpinBox* char_size_{nullptr};
     QSpinBox* chars_per_line_{nullptr};
     QCheckBox* style_enabled_{nullptr};
+    QCheckBox* style_model_enabled_{nullptr};
+    QLineEdit* style_model_path_{nullptr};
+    QDoubleSpinBox* style_model_strength_{nullptr};
     QDoubleSpinBox* style_size_cv_{nullptr};
     QDoubleSpinBox* style_gap_mean_{nullptr};
     QDoubleSpinBox* style_gap_cv_{nullptr};

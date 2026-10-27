@@ -43,7 +43,7 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 | Qt 桌面 UI | **可用**（常用面板 + 选项弹窗 + **横条本富文本编辑** + 实时预览 + 导出 + **串口直连书写** + **预览内点字编辑**） |
 | 串口 / GRBL 通信（C++ 核心） | 可用（流控、状态机、安全检查，118 项断言覆盖） |
 | 工作区标定（软限位） | 可用（4 步向导 + 示意图 + 越界保护） |
-| 笔迹风格模型 v0（训练 PyTorch / 推理 C++） | 可用 |
+| 笔迹风格模型 v0（训练 PyTorch / 推理 C++，App 已接入） | 可用 |
 | 整行风格 · 版面层（字大小 / 字距 / 基线） | 可用 |
 | 骨架对齐（1.0 / 2.0 → 标准骨架） | 可用 |
 | 序列模型骨架（GRU + MDN，Δ点/抬落笔/压感） | 可用（骨架） |
@@ -85,9 +85,14 @@ handwriting stylize "永" --model data/exports/style-model.pt --offline \
 handwriting stylize --svg-file drawing.svg --model data/exports/style-model.pt --svg out.svg
 ```
 
+App 里勾选左栏「使用风格模型」，在「选项 → 风格模型」里选权重 JSON、调强度；
+预览和导出的 G 代码会走同一条 C++ 推理。加载失败会自动回退标准骨架，并在状态栏提示。
+
+<img src="docs/images/model-on.png" width="860" alt="App 内启用风格模型">
+
 **边界**：v0 学的是「相对中心线的局部风格」（倾斜、提按、抖动），
-不是完整的字形风格迁移；真实个人风格需要数位板数据，以及把采集笔画与
-标准骨架做对齐（下一步）。设计与限制见 [docs/model.md](docs/model.md)。
+不是完整的字形风格迁移；真实个人风格需要数位板数据。骨架对齐已实现
+（`train --align`），真实数据训练待数位板。设计与限制见 [docs/model.md](docs/model.md)。
 
 **语言分工**：训练用 Python（PyTorch），**推理在产品运行时用 C++**
 （`core/src/style_model.cpp`，零 Python 依赖）。训练完导出权重：

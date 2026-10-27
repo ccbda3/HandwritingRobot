@@ -4,6 +4,8 @@
 #include "notebookeditor.h"
 #include "previewcanvas.h"
 
+#include "handwriting/style_model.hpp"
+
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
@@ -77,6 +79,26 @@ std::filesystem::path find_default_cache() {
         current = current.parent_path();
     }
     return std::filesystem::path(".cache") / "glyphs";
+}
+
+std::filesystem::path find_default_weights() {
+    std::error_code error;
+    std::filesystem::path current = std::filesystem::current_path(error);
+    if (error) {
+        return std::filesystem::path("data") / "exports" / "style-model.json";
+    }
+    for (int depth = 0; depth < 4; ++depth) {
+        const std::filesystem::path candidate =
+            current / "data" / "exports" / "style-model.json";
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+        if (!current.has_parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    return std::filesystem::path("data") / "exports" / "style-model.json";
 }
 
 QDoubleSpinBox* make_double(double minimum, double maximum, double value, int decimals,
@@ -173,6 +195,9 @@ void MainWindow::buildUi() {
     style_enabled_ = new QCheckBox(QStringLiteral("整行风格（字大小/字距/基线）"));
     common_form->addRow(QString(), style_enabled_);
 
+    style_model_enabled_ = new QCheckBox(QStringLiteral("使用风格模型（需 weights）"));
+    common_form->addRow(QString(), style_model_enabled_);
+
     panel_layout->addWidget(common_group);
 
     auto* settings_button = new QPushButton(QStringLiteral("高级设置…"));
@@ -236,6 +261,36 @@ void MainWindow::buildUi() {
     style_hint->setStyleSheet(QStringLiteral("color:#8a8a96;"));
     sp_form->addRow(style_hint);
     tabs->addTab(style_profile_group, QStringLiteral("整行风格"));
+
+    // 风格模型页
+    auto* model_group = new QGroupBox(QStringLiteral("风格模型"));
+    auto* model_form = new QFormLayout(model_group);
+    auto* path_row = new QHBoxLayout;
+    style_model_path_ = new QLineEdit(
+        QString::fromStdString(find_default_weights().string()));
+    path_row->addWidget(style_model_path_);
+    auto* model_browse = new QPushButton(QStringLiteral("选择…"));
+    connect(model_browse, &QPushButton::clicked, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("选择风格模型"), style_model_path_->text(),
+            QStringLiteral("权重 JSON (*.json)"));
+        if (!path.isEmpty()) {
+            style_model_path_->setText(path);
+            scheduleRefresh();
+        }
+    });
+    path_row->addWidget(model_browse);
+    model_form->addRow(QStringLiteral("权重 JSON"), path_row);
+    style_model_strength_ = make_double(0.0, 1.5, 1.0, 2);
+    style_model_strength_->setSingleStep(0.05);
+    model_form->addRow(QStringLiteral("风格强度"), style_model_strength_);
+    auto* model_hint = new QLabel(
+        QStringLiteral("先运行 handwriting export-weights 导出 JSON。"
+                       "勾选左栏「使用风格模型」后生效；加载失败会回退标准骨架。"));
+    model_hint->setWordWrap(true);
+    model_hint->setStyleSheet(QStringLiteral("color:#8a8a96;"));
+    model_form->addRow(model_hint);
+    tabs->addTab(model_group, QStringLiteral("风格模型"));
 
     // 字形页
     auto* style_group = new QGroupBox(QStringLiteral("字形"));
@@ -362,11 +417,15 @@ void MainWindow::buildUi() {
     for (QDoubleSpinBox* box :
          {page_width_, page_height_, char_size_, slant_, jitter_, pressure_amp_, feed_draw_,
           pen_up_z_, pen_down_z_, style_size_cv_, style_gap_mean_, style_gap_cv_,
-          style_baseline_drift_, style_baseline_slope_}) {
+          style_baseline_drift_, style_baseline_slope_, style_model_strength_}) {
         connect(box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
                 &MainWindow::scheduleRefresh);
     }
     connect(style_enabled_, &QCheckBox::toggled, this, &MainWindow::scheduleRefresh);
+    connect(style_model_enabled_, &QCheckBox::toggled, this,
+            &MainWindow::scheduleRefresh);
+    connect(style_model_path_, &QLineEdit::editingFinished, this,
+            &MainWindow::scheduleRefresh);
     for (QSpinBox* box : {line_count_, first_line_, chars_per_line_}) {
         connect(box, QOverload<int>::of(&QSpinBox::valueChanged), this,
                 &MainWindow::scheduleRefresh);
@@ -587,6 +646,28 @@ MainWindow::Rendered MainWindow::renderNow() const {
     }
 
     out.ok = !out.glyphs.empty();
+
+    // 训练好的 v0 模型：对每个字作用残差 + 笔压（与 dev server 同一条 C++ 路径）
+    if (style_model_enabled_ != nullptr && style_model_enabled_->isChecked()) {
+        const QString weights = style_model_path_->text();
+        if (weights.isEmpty()) {
+            out.style_warning = QStringLiteral("未设置权重路径");
+        } else {
+            try {
+                const auto model = handwriting::style::Model::load(
+                    std::filesystem::path(weights.toStdWString()));
+                const double strength = style_model_strength_->value();
+                for (auto& glyph : out.glyphs) {
+                    if (glyph.stroke_count() > 0) {
+                        glyph = model.stylize(glyph, strength);
+                    }
+                }
+            } catch (const std::exception& error) {
+                out.style_warning = QString::fromUtf8(error.what());
+            }
+        }
+    }
+
     if (!out.ok) {
         out.error = QStringLiteral("版面计算失败");
     }
@@ -925,6 +1006,14 @@ void MainWindow::updateStatus(const Rendered& rendered) {
         }
         machine += QStringLiteral("  ·  缺失字形：%1").arg(list);
     }
+    if (style_model_enabled_ != nullptr && style_model_enabled_->isChecked()) {
+        if (!rendered.style_warning.isEmpty()) {
+            machine += QStringLiteral("  ·  风格模型失败：%1")
+                           .arg(rendered.style_warning.left(80));
+        } else {
+            machine += QStringLiteral("  ·  风格模型已启用");
+        }
+    }
     status_machine_->setText(machine);
 }
 
@@ -949,6 +1038,10 @@ void MainWindow::resetLayoutDefaults() {
     style_gap_cv_->setValue(0.30);
     style_baseline_drift_->setValue(0.5);
     style_baseline_slope_->setValue(0.03);
+    style_model_enabled_->setChecked(false);
+    style_model_strength_->setValue(1.0);
+    style_model_path_->setText(
+        QString::fromStdString(find_default_weights().string()));
     updateModeEnabled();
     refresh();
     canvas_->zoomToFit();
@@ -1056,4 +1149,10 @@ void MainWindow::setDemoStyle(bool enabled) {
         style_baseline_slope_->setValue(0.06);
     }
     style_enabled_->setChecked(enabled);
+}
+
+void MainWindow::setDemoStyleModel(bool enabled) {
+    if (style_model_enabled_ != nullptr) {
+        style_model_enabled_->setChecked(enabled);
+    }
 }

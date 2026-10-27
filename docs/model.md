@@ -73,6 +73,10 @@ C++ 侧调用 `handwriting::style::Model::load(json).stylize(stroke_set)`，
 实现见 `core/src/style_model.cpp`。Python 的 `model/generate.py` 保留为
 训练期参考实现；跨语言对拍工具 `hr-style-dump`，当前最大误差 **1.1e-07**。
 
+Qt App 已接入：左栏勾选「使用风格模型」，在「选项 → 风格模型」里选权重 JSON、
+调强度；`renderNow` 对每个字调用同一个 `style::Model::stylize`，
+预览与导出的 G 代码使用同一份结果。加载失败回退标准骨架，状态栏提示。
+
 ## 开发者模式（文章 → 实时推理 + 排版 + 编辑）
 
 ```bash
@@ -112,7 +116,8 @@ python scripts/serve_dev.py --model data/exports/style-model.pt \
 - **不建模笔间抬落笔**：笔画之间固定抬笔，不学连笔。
 - **不建模速度/时序**：输出点按弧长均匀，时序由 G 代码进给决定。
 - **不重建字形整体比例**：只做相对中心线的局部变形。
-- **真实数据尚未骨架对齐**：所以现在只能用合成风格验证链路。
+- **真实数据尚未训练**：骨架对齐已实现（`train --align`），但还没有数位板行数据，
+  当前模型是合成风格。
 - 逐点独立预测，`--sample` 时相邻点可能跳到不同混合分量；默认取均值避免跳点。
 - 推理已迁到 C++；Python 的 `generate.py` 只作训练期参考，不再进入产品路径。
 

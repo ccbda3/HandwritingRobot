@@ -40,6 +40,10 @@
 
 ### 新增
 
+- **原生采集与训练**（`app/src/capturecanvas.*`、`app/src/capturetraindialog.*`）：
+  工具 → 采集与训练…；单字/整行、数位板/鼠标、多样本导出 1.0/2.0 JSON；
+  训练页调用 Python CLI（`--align` / `--offline`），日志/进度实时显示，
+  训练完自动 `export-weights` 并启用模型。不再依赖网页采集器。
 - **Qt App 接入 v0 风格模型**：左栏「使用风格模型」开关 + 选项「风格模型」页
   （权重 JSON、强度）；`renderNow` 对每个字调用 C++ `style::Model::stylize`，
   预览与导出的 G 代码使用同一结果；加载失败回退标准骨架并在状态栏提示。

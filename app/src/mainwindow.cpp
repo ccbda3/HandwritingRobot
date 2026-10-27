@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 
+#include "capturetraindialog.h"
 #include "machinepanel.h"
 #include "notebookeditor.h"
 #include "previewcanvas.h"
@@ -520,6 +521,10 @@ void MainWindow::buildMenus() {
     options_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+,")));
     connect(options_action, &QAction::triggered, this, &MainWindow::showSettings);
 
+    auto* tools_menu = menuBar()->addMenu(QStringLiteral("工具(&T)"));
+    auto* capture_action = tools_menu->addAction(QStringLiteral("采集与训练…"));
+    connect(capture_action, &QAction::triggered, this, &MainWindow::showCaptureTrain);
+
     auto* toolbar = addToolBar(QStringLiteral("主工具栏"));
     toolbar->setMovable(false);
     toolbar->addAction(export_action);
@@ -527,6 +532,7 @@ void MainWindow::buildMenus() {
     toolbar->addAction(fit_action);
     toolbar->addAction(refresh_action);
     toolbar->addSeparator();
+    toolbar->addAction(capture_action);
     toolbar->addAction(options_action);
 }
 
@@ -557,6 +563,29 @@ void MainWindow::showSettings() {
     settings_dialog_->show();
     settings_dialog_->raise();
     settings_dialog_->activateWindow();
+}
+
+void MainWindow::showCaptureTrain() {
+    if (capture_dialog_ == nullptr) {
+        capture_dialog_ = new CaptureTrainDialog(this);
+        capture_dialog_->setCacheDir(cache_edit_->text());
+        connect(capture_dialog_, &CaptureTrainDialog::modelReady, this,
+                &MainWindow::applyTrainedModel);
+    }
+    capture_dialog_->show();
+    capture_dialog_->raise();
+    capture_dialog_->activateWindow();
+}
+
+void MainWindow::applyTrainedModel(const QString& weights) {
+    if (style_model_path_ == nullptr) {
+        return;
+    }
+    style_model_path_->setText(weights);
+    if (style_model_enabled_ != nullptr) {
+        style_model_enabled_->setChecked(true);
+    }
+    scheduleRefresh();
 }
 
 // ---------------------------------------------------------------------------

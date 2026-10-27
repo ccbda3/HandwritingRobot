@@ -1,10 +1,12 @@
 #include <QApplication>
+#include <QDebug>
 #include <QDialog>
 #include <QFontDatabase>
 #include <QMetaObject>
 #include <QStringList>
 #include <QTimer>
 
+#include "capturetraindialog.h"
 #include "handwriting/bounds.hpp"
 #include "mainwindow.h"
 
@@ -105,20 +107,48 @@ int main(int argc, char* argv[]) {
         snapshot_mode && arguments.contains(QStringLiteral("--snapshot-settings"));
     const bool snapshot_text =
         snapshot_mode && arguments.contains(QStringLiteral("--snapshot-text"));
+    const bool snapshot_capture =
+        snapshot_mode && arguments.contains(QStringLiteral("--snapshot-capture"));
+    const bool snapshot_train =
+        snapshot_mode && arguments.contains(QStringLiteral("--snapshot-train"));
     if (snapshot_settings) {
         QMetaObject::invokeMethod(&window, "showSettings", Qt::QueuedConnection);
     }
     if (snapshot_text) {
         QMetaObject::invokeMethod(&window, "editText", Qt::QueuedConnection);
     }
+    if (snapshot_capture || snapshot_train) {
+        QMetaObject::invokeMethod(&window, "showCaptureTrain", Qt::QueuedConnection);
+    }
+    if (snapshot_train) {
+        QTimer::singleShot(150, &window, [&window] {
+            if (auto* dialog = window.captureDialog()) {
+                dialog->showTrainingTab();
+            }
+        });
+    }
+    if (arguments.contains(QStringLiteral("--demo-capture"))) {
+        QMetaObject::invokeMethod(&window, "showCaptureTrain", Qt::QueuedConnection);
+        QTimer::singleShot(200, &window, [&window] {
+            if (auto* dialog = window.captureDialog()) {
+                dialog->saveDemoCapture();
+                qInfo().noquote() << "demo capture:" << dialog->lastExportPath();
+            }
+        });
+    }
 
     if (snapshot_mode) {
         const QString path = arguments.at(index + 1);
         // 等一拍让延迟刷新定时器跑完、布局稳定下来
         QTimer::singleShot(600, &window,
-                           [&window, path, snapshot_settings, snapshot_text]() {
+                           [&window, path, snapshot_settings, snapshot_text,
+                            snapshot_capture, snapshot_train]() {
                                QWidget* target = &window;
-                               if (snapshot_text && window.textDialog() != nullptr) {
+                               if ((snapshot_capture || snapshot_train) &&
+                                   window.captureDialog() != nullptr) {
+                                   target = window.captureDialog();
+                               } else if (snapshot_text &&
+                                          window.textDialog() != nullptr) {
                                    target = window.textDialog();
                                } else if (snapshot_settings &&
                                           window.settingsDialog() != nullptr) {

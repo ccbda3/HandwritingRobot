@@ -17,6 +17,10 @@ endif()
 
 add_executable(handwriting-studio
     src/main.cpp
+    src/capturecanvas.cpp
+    src/capturecanvas.h
+    src/capturetraindialog.cpp
+    src/capturetraindialog.h
     src/machinepanel.cpp
     src/machinepanel.h
     src/notebookeditor.cpp

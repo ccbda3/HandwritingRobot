@@ -30,7 +30,7 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 
 | 模块 | 状态 |
 |---|---|
-| 笔迹采集器（网页） | 可用 |
+| 笔迹采集器（网页 / App 原生） | 可用 |
 | 风格特征提取 | 可用 |
 | 主动选字（覆盖度驱动） | 可用 |
 | 字形骨架 → 轨迹 → G 代码 | 可用 |
@@ -63,6 +63,20 @@ handwriting compose svg     --file drawing.svg --svg preview.svg
 「整行风格」开启后，字大小与基线会有统计波动，横条本仍压在横线上：
 
 <img src="docs/images/line-style.png" width="860" alt="整行风格">
+
+## 采集与训练（App 内，不依赖网页）
+
+**工具 → 采集与训练…** 打开原生窗口。
+
+| 采集 | 训练 |
+|---|---|
+| <img src="docs/images/capture-tab.png" width="420" alt="采集"> | <img src="docs/images/train-tab.png" width="420" alt="训练"> |
+
+- **采集**：单字 / 整行，数位板或鼠标书写；「添加当前样本」累积多条，「导出 JSON」生成
+  1.0 / 2.0 采集文件。整行模式按笔画停顿自动切字（`charRanges`）。
+- **训练**：选数据 → 勾选「对齐到标准骨架」→ 开始训练；日志/进度实时显示。
+  训练完自动 `export-weights`，并把 App 的「使用风格模型」指向新权重。
+- 训练仍由 Python/PyTorch 完成（ADR-0007），App 通过 `QProcess` 调用；不再需要网页采集器。
 
 ## 风格模型 v0（可选，需要 torch）
 

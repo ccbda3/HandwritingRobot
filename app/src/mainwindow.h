@@ -30,6 +30,7 @@ class QDialog;
 class QLineEdit;
 class QPlainTextEdit;
 class NotebookEditor;
+class CaptureTrainDialog;
 class QSpinBox;
 class QTimer;
 class QDockWidget;
@@ -53,6 +54,10 @@ public:
     [[nodiscard]] QDialog* settingsDialog() const noexcept { return settings_dialog_; }
     /// 仅供快照：拿到文本编辑弹窗指针（首次打开后才有）。
     [[nodiscard]] QDialog* textDialog() const noexcept { return text_dialog_; }
+    /// 仅供快照：拿到采集/训练弹窗指针（首次打开后才有）。
+    [[nodiscard]] CaptureTrainDialog* captureDialog() const noexcept {
+        return capture_dialog_;
+    }
 
 private slots:
     void scheduleRefresh();
@@ -62,6 +67,8 @@ private slots:
     void showSettings();
     void editText();
     void updateTextPreview();
+    void showCaptureTrain();
+    void applyTrainedModel(const QString& weights);
     void resetLayoutDefaults();
     void exportGcode();
     void exportPreviewImage();
@@ -109,6 +116,7 @@ private:
     QLabel* text_dialog_stats_{nullptr};
     PreviewCanvas* canvas_{nullptr};
     QDialog* settings_dialog_{nullptr};
+    CaptureTrainDialog* capture_dialog_{nullptr};
     QLineEdit* cell_editor_{nullptr};
     int edit_index_{-1};
     Rendered last_rendered_;

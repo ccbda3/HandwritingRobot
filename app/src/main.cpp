@@ -42,7 +42,12 @@ void register_snapshot_fonts() {
 // 把界面渲染成图片。开发期用来确认布局没写崩，CI 里用来做视觉回归。
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("HandwritingRobot Studio"));
+    // 快照用独立的 QSettings 作用域，避免恢复用户窗口/版面导致截图不确定
+    const QStringList early_args = QCoreApplication::arguments();
+    const bool snapshot_early = early_args.contains(QStringLiteral("--snapshot"));
+    QApplication::setApplicationName(snapshot_early
+                                         ? QStringLiteral("HandwritingRobotSnapshot")
+                                         : QStringLiteral("HandwritingRobot Studio"));
     QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QApplication::setOrganizationName(QStringLiteral("HandwritingRobot"));
 
@@ -92,9 +97,19 @@ int main(int argc, char* argv[]) {
     if (have_head) {
         window.setDemoHead(demo_hx, demo_hy);
     }
+    const int pi = arguments.indexOf(QStringLiteral("--demo-project"));
+    if (pi >= 0 && pi + 1 < arguments.size()) {
+        const bool ok = window.selfTestProject(arguments.at(pi + 1));
+        qInfo().noquote() << "project self-test:" << (ok ? "ok" : "FAILED");
+        return ok ? 0 : 1;
+    }
     const int ti = arguments.indexOf(QStringLiteral("--demo-text"));
     if (ti >= 0 && ti + 1 < arguments.size()) {
         window.setDemoText(arguments.at(ti + 1));
+    }
+    const int dpi = arguments.indexOf(QStringLiteral("--demo-page"));
+    if (dpi >= 0 && dpi + 1 < arguments.size()) {
+        window.setDemoPage(arguments.at(dpi + 1).toInt());
     }
     if (arguments.contains(QStringLiteral("--demo-style"))) {
         window.setDemoStyle(true);

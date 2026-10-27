@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace handwriting::layout {
@@ -96,5 +97,18 @@ struct StyleProfile {
 [[nodiscard]] Page compute_styled(const std::vector<std::size_t>& row_char_counts,
                                   const Settings& settings,
                                   const StyleProfile& profile);
+
+// 一页文本：自动折行后的文本，以及每个字在原全文里的 UTF-8 字节偏移。
+// ``char_offsets`` 只包含非换行字符，顺序与渲染出的字形一一对应，
+// UI 点字编辑时用它定位到原文，不会因为分页/折行而串位。
+struct PageText {
+    std::string text;
+    std::size_t start_offset{0};
+    std::vector<std::size_t> char_offsets;
+};
+
+// 按版面把全文切成若干页；空文本返回一页空文本。
+[[nodiscard]] std::vector<PageText> paginate(const std::string& text,
+                                             const Settings& settings);
 
 }  // namespace handwriting::layout

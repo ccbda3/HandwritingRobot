@@ -285,6 +285,77 @@ int main() {
         }
     }
 
+    // ---- 分页：折行、显式换行、空行、每页行数 ----
+    {
+        Settings grid;
+        grid.mode = Mode::Grid;
+        grid.page_width_mm = 100.0;
+        grid.page_height_mm = 30.0;
+        grid.margin_x_mm = 0.0;
+        grid.margin_y_mm = 0.0;
+        grid.char_size_mm = 10.0;
+        grid.chars_per_line = 3;
+        grid.line_gap_mm = 0.0;
+
+        const auto pages = handwriting::layout::paginate("abcdefghij", grid);
+        HR_CHECK(pages.size() == 2);
+        if (pages.size() == 2) {
+            HR_CHECK(pages[0].text == "abc\ndef\nghi");
+            HR_CHECK(pages[0].char_offsets.size() == 9);
+            HR_CHECK(pages[0].char_offsets.front() == 0);
+            HR_CHECK(pages[0].char_offsets.back() == 8);
+            HR_CHECK(pages[1].text == "j");
+            HR_CHECK(pages[1].start_offset == 9);
+            HR_CHECK(pages[1].char_offsets.size() == 1);
+            HR_CHECK(pages[1].char_offsets[0] == 9);
+        }
+    }
+    {
+        Settings grid;
+        grid.mode = Mode::Grid;
+        grid.page_height_mm = 100.0;
+        grid.margin_y_mm = 0.0;
+        grid.char_size_mm = 10.0;
+        grid.chars_per_line = 10;
+        grid.line_gap_mm = 0.0;
+        const auto pages = handwriting::layout::paginate("ab\ncd", grid);
+        HR_CHECK(pages.size() == 1);
+        if (pages.size() == 1) {
+            HR_CHECK(pages[0].text == "ab\ncd");
+            HR_CHECK(pages[0].char_offsets.size() == 4);
+            HR_CHECK(pages[0].char_offsets[2] == 3);
+            HR_CHECK(pages[0].char_offsets[3] == 4);
+        }
+    }
+    {
+        Settings grid;
+        grid.mode = Mode::Grid;
+        grid.page_height_mm = 100.0;
+        grid.margin_y_mm = 0.0;
+        grid.char_size_mm = 10.0;
+        grid.chars_per_line = 10;
+        grid.line_gap_mm = 0.0;
+        const auto pages = handwriting::layout::paginate("a\n\nb", grid);
+        HR_CHECK(pages.size() == 1);
+        if (pages.size() == 1) {
+            HR_CHECK(pages[0].text == "a\n\nb");
+            HR_CHECK(pages[0].char_offsets.size() == 2);
+            HR_CHECK(pages[0].char_offsets[0] == 0);
+            HR_CHECK(pages[0].char_offsets[1] == 3);
+        }
+    }
+    {
+        Settings nb = notebook();
+        nb.line_count = 4;
+        nb.first_line = 3;
+        const auto pages = handwriting::layout::paginate("a\nb\nc", nb);
+        HR_CHECK(pages.size() == 2);
+        if (pages.size() == 2) {
+            HR_CHECK(pages[0].text == "a\nb");
+            HR_CHECK(pages[1].text == "c");
+        }
+    }
+
     // ---- 参数校验 ----
     {
         Settings settings = notebook();

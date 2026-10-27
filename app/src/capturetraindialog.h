@@ -43,6 +43,7 @@ signals:
 private slots:
     void addSample();
     void exportJson();
+    void inspectData();
     void startTraining();
     void cancelTraining();
     void onProcessOutput();
@@ -83,6 +84,7 @@ private:
     QCheckBox* auto_export_{nullptr};
     QSpinBox* epochs_{nullptr};
     QSpinBox* n_points_{nullptr};
+    QPushButton* inspect_button_{nullptr};
     QPushButton* train_button_{nullptr};
     QPushButton* cancel_button_{nullptr};
     QProgressBar* progress_{nullptr};

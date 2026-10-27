@@ -9,6 +9,7 @@
 
 #include <QAction>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
@@ -22,6 +23,8 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -30,6 +33,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSettings>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
@@ -38,6 +42,8 @@
 #include <QTextCursor>
 #include <QTimer>
 #include <QToolBar>
+
+#include <algorithm>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -130,9 +136,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     refresh_timer_->setInterval(kRefreshDelayMs);
     connect(refresh_timer_, &QTimer::timeout, this, &MainWindow::refresh);
 
+    restoreSettings();
+
+    loading_ = false;
     updateModeEnabled();
     updateTextPreview();
     refresh();
+    updateWindowTitle();
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +395,7 @@ void MainWindow::buildUi() {
     // ---- 左侧停靠：参数面板（可滚动） ----
     auto* params_dock = new QDockWidget(QStringLiteral("常用"), this);
     params_dock->setObjectName(QStringLiteral("paramsDock"));
+    params_dock->setObjectName(QStringLiteral("paramsDock"));
     params_dock->setWidget(scroll);
     params_dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::LeftDockWidgetArea, params_dock);
@@ -427,6 +438,28 @@ void MainWindow::buildUi() {
             &MainWindow::scheduleRefresh);
     connect(style_model_path_, &QLineEdit::editingFinished, this,
             &MainWindow::scheduleRefresh);
+
+    // 项目脏标记：文本/版面/风格/字形参数变化都算修改
+    connect(text_edit_, &QPlainTextEdit::textChanged, this, &MainWindow::markDirty);
+    connect(mode_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &MainWindow::markDirty);
+    connect(line_count_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            &MainWindow::markDirty);
+    connect(first_line_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            &MainWindow::markDirty);
+    connect(chars_per_line_, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            &MainWindow::markDirty);
+    for (QDoubleSpinBox* box :
+         {page_width_, page_height_, char_size_, slant_, jitter_, pressure_amp_,
+          style_size_cv_, style_gap_mean_, style_gap_cv_, style_baseline_drift_,
+          style_baseline_slope_, style_model_strength_}) {
+        connect(box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                &MainWindow::markDirty);
+    }
+    connect(style_enabled_, &QCheckBox::toggled, this, &MainWindow::markDirty);
+    connect(style_model_enabled_, &QCheckBox::toggled, this, &MainWindow::markDirty);
+    connect(style_model_path_, &QLineEdit::editingFinished, this,
+            &MainWindow::markDirty);
     for (QSpinBox* box : {line_count_, first_line_, chars_per_line_}) {
         connect(box, QOverload<int>::of(&QSpinBox::valueChanged), this,
                 &MainWindow::scheduleRefresh);
@@ -442,6 +475,7 @@ void MainWindow::buildUi() {
 
     // ---- 机器控制面板（右侧停靠，作为竖向侧栏） ----
     auto* dock = new QDockWidget(QStringLiteral("机器控制 · 串口直连"), this);
+    dock->setObjectName(QStringLiteral("machineDock"));
     dock->setObjectName(QStringLiteral("machineDock"));
     machine_panel_ = new MachinePanel(dock);
     machine_panel_->setProgramProvider([this] { return current_program_; });
@@ -459,18 +493,39 @@ void MainWindow::buildUi() {
 void MainWindow::buildMenus() {
     auto* file_menu = menuBar()->addMenu(QStringLiteral("文件(&F)"));
 
+    auto* new_action = file_menu->addAction(QStringLiteral("新建(&N)"));
+    new_action->setShortcut(QKeySequence::New);
+    connect(new_action, &QAction::triggered, this, &MainWindow::newProject);
+
+    auto* open_action = file_menu->addAction(QStringLiteral("打开(&O)..."));
+    open_action->setShortcut(QKeySequence::Open);
+    connect(open_action, &QAction::triggered, this, &MainWindow::openProject);
+
+    recent_menu_ = file_menu->addMenu(QStringLiteral("最近打开(&R)"));
+
+    save_action_ = file_menu->addAction(QStringLiteral("保存(&S)"));
+    save_action_->setShortcut(QKeySequence::Save);
+    connect(save_action_, &QAction::triggered, this, &MainWindow::saveProject);
+
+    save_as_action_ = file_menu->addAction(QStringLiteral("另存为(&A)..."));
+    save_as_action_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+S")));
+    connect(save_as_action_, &QAction::triggered, this, &MainWindow::saveProjectAs);
+
+    file_menu->addSeparator();
     auto* export_action = file_menu->addAction(QStringLiteral("导出 G 代码(&G)..."));
-    export_action->setShortcut(QKeySequence::Save);
+    export_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
     connect(export_action, &QAction::triggered, this, &MainWindow::exportGcode);
 
     auto* image_action = file_menu->addAction(QStringLiteral("导出预览图(&P)..."));
-    image_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+S")));
+    image_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+E")));
     connect(image_action, &QAction::triggered, this, &MainWindow::exportPreviewImage);
 
     file_menu->addSeparator();
     auto* quit_action = file_menu->addAction(QStringLiteral("退出(&Q)"));
     quit_action->setShortcut(QKeySequence::Quit);
     connect(quit_action, &QAction::triggered, this, &QWidget::close);
+
+    updateRecentMenu();
 
     auto* view_menu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
 
@@ -526,6 +581,7 @@ void MainWindow::buildMenus() {
     connect(capture_action, &QAction::triggered, this, &MainWindow::showCaptureTrain);
 
     auto* toolbar = addToolBar(QStringLiteral("主工具栏"));
+    toolbar->setObjectName(QStringLiteral("mainToolBar"));
     toolbar->setMovable(false);
     toolbar->addAction(export_action);
     toolbar->addSeparator();
@@ -534,6 +590,14 @@ void MainWindow::buildMenus() {
     toolbar->addSeparator();
     toolbar->addAction(capture_action);
     toolbar->addAction(options_action);
+
+    toolbar->addSeparator();
+    prev_page_action_ = toolbar->addAction(QStringLiteral("上一页"));
+    next_page_action_ = toolbar->addAction(QStringLiteral("下一页"));
+    prev_page_action_->setShortcut(QKeySequence(Qt::Key_PageUp));
+    next_page_action_->setShortcut(QKeySequence(Qt::Key_PageDown));
+    connect(prev_page_action_, &QAction::triggered, this, &MainWindow::prevPage);
+    connect(next_page_action_, &QAction::triggered, this, &MainWindow::nextPage);
 }
 
 void MainWindow::buildStatusBar() {
@@ -641,9 +705,12 @@ MainWindow::Rendered MainWindow::renderNow() const {
     const handwriting::glyph::GlyphCache cache(cache_edit_->text().toStdString());
     const handwriting::render::Settings render_settings = renderSettings();
 
-    // chars_per_line 传 0：折行统一由 layout 负责，避免两处各折一次
+    // chars_per_line 传 0：折行统一由 layout 负责，避免两处各折一次。
+    // 分页后只渲染当前页；点字编辑用 PageText.char_offsets 回到原文。
+    const std::string page_text =
+        pages_ready_ ? current_page_text_ : text_edit_->toPlainText().toStdString();
     handwriting::render::Result rendered = handwriting::render::render_text(
-        text_edit_->toPlainText().toStdString(), cache, render_settings, 0);
+        page_text, cache, render_settings, 0);
 
     out.missing = rendered.missing;
     out.source_offsets = rendered.source_offsets;
@@ -707,7 +774,45 @@ void MainWindow::scheduleRefresh() {
     refresh_timer_->start();
 }
 
+void MainWindow::ensurePages() {
+    pages_ = handwriting::layout::paginate(
+        text_edit_->toPlainText().toStdString(), layoutSettings());
+    if (pages_.empty()) {
+        pages_.push_back(handwriting::layout::PageText{});
+    }
+    current_page_ = std::clamp(current_page_, 0, static_cast<int>(pages_.size()) - 1);
+    current_page_text_ = pages_[current_page_].text;
+    current_page_char_offsets_ = pages_[current_page_].char_offsets;
+    pages_ready_ = true;
+    updatePageNav();
+}
+
+void MainWindow::updatePageNav() {
+    const int count = static_cast<int>(pages_.size());
+    if (prev_page_action_ != nullptr) {
+        prev_page_action_->setEnabled(current_page_ > 0);
+    }
+    if (next_page_action_ != nullptr) {
+        next_page_action_->setEnabled(current_page_ + 1 < count);
+    }
+}
+
+void MainWindow::prevPage() {
+    if (current_page_ > 0) {
+        --current_page_;
+        refresh();
+    }
+}
+
+void MainWindow::nextPage() {
+    if (current_page_ + 1 < static_cast<int>(pages_.size())) {
+        ++current_page_;
+        refresh();
+    }
+}
+
 void MainWindow::refresh() {
+    ensurePages();
     const Rendered rendered = renderNow();
     last_rendered_ = rendered;
 
@@ -732,7 +837,6 @@ void MainWindow::refresh() {
 
 void MainWindow::beginCellEdit(int index) {
     if (index < 0 ||
-        static_cast<std::size_t>(index) >= last_rendered_.source_offsets.size() ||
         static_cast<std::size_t>(index) >= last_rendered_.glyphs.size()) {
         return;
     }
@@ -758,14 +862,17 @@ void MainWindow::commitCellEdit() {
     cell_editor_->hide();
     const int index = edit_index_;
     edit_index_ = -1;
-    if (index < 0 || value.isEmpty() ||
-        static_cast<std::size_t>(index) >= last_rendered_.source_offsets.size()) {
+    if (index < 0 || value.isEmpty()) {
         return;
     }
 
-    // source_offsets 是 UTF-8 字节偏移；转成 QString 位置再替换，避免中文/缺字错位
-    const std::size_t offset =
-        last_rendered_.source_offsets[static_cast<std::size_t>(index)];
+    // 缺字会被 render_text 跳过，所以不能直接用字形序号索引 char_offsets；
+    // 先用 source_offsets（页内字节偏移）映射回原全文的字节偏移。
+    const auto source = sourceOffsetForGlyph(index);
+    if (!source.has_value()) {
+        return;
+    }
+    const std::size_t offset = *source;
     const QString current = text_edit_->toPlainText();
     const QString prefix =
         QString::fromStdString(current.toStdString().substr(0, offset));
@@ -778,6 +885,48 @@ void MainWindow::commitCellEdit() {
     if (updated != current) {
         text_edit_->setPlainText(updated);  // textChanged 会触发 scheduleRefresh
     }
+}
+
+std::optional<std::size_t> MainWindow::sourceOffsetForGlyph(int index) const {
+    if (index < 0 ||
+        static_cast<std::size_t>(index) >= last_rendered_.source_offsets.size()) {
+        return std::nullopt;
+    }
+    const std::size_t target =
+        last_rendered_.source_offsets[static_cast<std::size_t>(index)];
+
+    std::size_t page_offset = 0;
+    std::size_t char_index = 0;
+    while (page_offset < current_page_text_.size()) {
+        const unsigned char lead =
+            static_cast<unsigned char>(current_page_text_[page_offset]);
+        std::size_t length = 1;
+        if ((lead & 0x80U) == 0) {
+            length = 1;
+        } else if ((lead & 0xE0U) == 0xC0U) {
+            length = 2;
+        } else if ((lead & 0xF0U) == 0xE0U) {
+            length = 3;
+        } else if ((lead & 0xF8U) == 0xF0U) {
+            length = 4;
+        }
+        if (page_offset + length > current_page_text_.size()) {
+            length = current_page_text_.size() - page_offset;
+        }
+        const bool newline =
+            current_page_text_.compare(page_offset, length, "\n") == 0;
+        if (!newline) {
+            if (page_offset == target) {
+                if (char_index < current_page_char_offsets_.size()) {
+                    return current_page_char_offsets_[char_index];
+                }
+                return std::nullopt;
+            }
+            ++char_index;
+        }
+        page_offset += length;
+    }
+    return std::nullopt;
 }
 
 void MainWindow::updateTextPreview() {
@@ -1011,15 +1160,23 @@ void MainWindow::updateStatus(const Rendered& rendered) {
     const double serial_seconds =
         static_cast<double>(program.stats.line_count) / kGrblLinesPerSecond;
 
-    status_chars_->setText(QStringLiteral("字符 %1 · 笔画 %2 · 采样点 %3")
+    const QString scope = pages_.size() > 1 ? QStringLiteral("本页 ") : QString();
+    status_chars_->setText(QStringLiteral("%1字符 %2 · 笔画 %3 · 采样点 %4")
+                               .arg(scope)
                                .arg(rendered.glyphs.size())
                                .arg(strokes)
                                .arg(points));
 
-    status_page_->setText(QStringLiteral("幅面 %1 × %2 mm · 每行 %3 字")
-                              .arg(rendered.page.width_mm, 0, 'f', 1)
-                              .arg(rendered.page.height_mm, 0, 'f', 1)
-                              .arg(rendered.page.chars_per_line));
+    QString page_info = QStringLiteral("幅面 %1 × %2 mm · 每行 %3 字")
+                            .arg(rendered.page.width_mm, 0, 'f', 1)
+                            .arg(rendered.page.height_mm, 0, 'f', 1)
+                            .arg(rendered.page.chars_per_line);
+    if (pages_.size() > 1) {
+        page_info += QStringLiteral(" · 第 %1 / %2 页")
+                         .arg(current_page_ + 1)
+                         .arg(static_cast<int>(pages_.size()));
+    }
+    status_page_->setText(page_info);
 
     QString machine = QStringLiteral("G 代码 %1 行 · 串口约 %2 s · 运动约 %3 s")
                           .arg(program.stats.line_count)
@@ -1050,6 +1207,378 @@ void MainWindow::updateStatus(const Rendered& rendered) {
 // 操作
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 项目文件：文本 + 版面 + 字形 + 风格模型
+// ---------------------------------------------------------------------------
+
+void MainWindow::markDirty() {
+    if (loading_) {
+        return;
+    }
+    if (!dirty_) {
+        dirty_ = true;
+        updateWindowTitle();
+    }
+}
+
+void MainWindow::newProject() {
+    if (!maybeSave()) {
+        return;
+    }
+    loading_ = true;
+    text_edit_->setPlainText(QString::fromUtf8(kDefaultText));
+    resetLayoutDefaults();
+    project_path_.clear();
+    current_page_ = 0;
+    dirty_ = false;
+    loading_ = false;
+    updateWindowTitle();
+    refresh();
+}
+
+void MainWindow::openProject() {
+    if (!maybeSave()) {
+        return;
+    }
+    const QString start =
+        project_path_.isEmpty() ? QString() : QFileInfo(project_path_).absolutePath();
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("打开项目"), start,
+        QStringLiteral("HandwritingRobot 项目 (*.hrproj *.json)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QString error;
+    if (!loadProjectFile(path, &error)) {
+        QMessageBox::warning(this, QStringLiteral("打开失败"), error);
+    }
+}
+
+void MainWindow::saveProject() {
+    if (project_path_.isEmpty()) {
+        saveProjectAs();
+        return;
+    }
+    if (!saveProjectFile(project_path_)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+                             QStringLiteral("无法写入：%1").arg(project_path_));
+    }
+}
+
+void MainWindow::saveProjectAs() {
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存项目"),
+        project_path_.isEmpty() ? QStringLiteral("handwriting.hrproj") : project_path_,
+        QStringLiteral("HandwritingRobot 项目 (*.hrproj)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    if (!path.endsWith(QStringLiteral(".hrproj"), Qt::CaseInsensitive)) {
+        path += QStringLiteral(".hrproj");
+    }
+    if (!saveProjectFile(path)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+                             QStringLiteral("无法写入：%1").arg(path));
+    }
+}
+
+bool MainWindow::maybeSave() {
+    if (!dirty_) {
+        return true;
+    }
+    const auto reply = QMessageBox::warning(
+        this, QStringLiteral("未保存的修改"),
+        QStringLiteral("当前项目有未保存的修改，是否保存？"),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+    if (reply == QMessageBox::Save) {
+        saveProject();
+        return !dirty_;
+    }
+    return reply == QMessageBox::Discard;
+}
+
+QJsonObject MainWindow::projectJson() const {
+    QJsonObject root;
+    root[QStringLiteral("format")] = QStringLiteral("handwriting-project/1");
+    root[QStringLiteral("text")] = text_edit_->toPlainText();
+    root[QStringLiteral("currentPage")] = current_page_;
+
+    QJsonObject layout;
+    layout[QStringLiteral("mode")] = mode_combo_->currentIndex();
+    layout[QStringLiteral("pageWidth")] = page_width_->value();
+    layout[QStringLiteral("pageHeight")] = page_height_->value();
+    layout[QStringLiteral("lineCount")] = line_count_->value();
+    layout[QStringLiteral("firstLine")] = first_line_->value();
+    layout[QStringLiteral("charSize")] = char_size_->value();
+    layout[QStringLiteral("charsPerLine")] = chars_per_line_->value();
+    layout[QStringLiteral("styleEnabled")] = style_enabled_->isChecked();
+    layout[QStringLiteral("styleSizeCv")] = style_size_cv_->value();
+    layout[QStringLiteral("styleGapMean")] = style_gap_mean_->value();
+    layout[QStringLiteral("styleGapCv")] = style_gap_cv_->value();
+    layout[QStringLiteral("styleBaselineDrift")] = style_baseline_drift_->value();
+    layout[QStringLiteral("styleBaselineSlope")] = style_baseline_slope_->value();
+    root[QStringLiteral("layout")] = layout;
+
+    QJsonObject render;
+    render[QStringLiteral("slant")] = slant_->value();
+    render[QStringLiteral("jitter")] = jitter_->value();
+    render[QStringLiteral("pressureAmp")] = pressure_amp_->value();
+    root[QStringLiteral("render")] = render;
+
+    QJsonObject model;
+    model[QStringLiteral("enabled")] = style_model_enabled_->isChecked();
+    model[QStringLiteral("path")] = style_model_path_->text();
+    model[QStringLiteral("strength")] = style_model_strength_->value();
+    root[QStringLiteral("styleModel")] = model;
+    return root;
+}
+
+bool MainWindow::applyProjectJson(const QJsonObject& root, QString* error) {
+    if (root[QStringLiteral("format")].toString() !=
+        QStringLiteral("handwriting-project/1")) {
+        *error = QStringLiteral("不是 HandwritingRobot 项目文件（format 不匹配）");
+        return false;
+    }
+    if (!root[QStringLiteral("text")].isString()) {
+        *error = QStringLiteral("缺少 text 字段");
+        return false;
+    }
+
+    text_edit_->setPlainText(root[QStringLiteral("text")].toString());
+    current_page_ = root[QStringLiteral("currentPage")].toInt(0);
+
+    const QJsonObject layout = root[QStringLiteral("layout")].toObject();
+    mode_combo_->setCurrentIndex(layout[QStringLiteral("mode")].toInt(0) == 0 ? 0 : 1);
+    page_width_->setValue(layout[QStringLiteral("pageWidth")].toDouble(150.0));
+    page_height_->setValue(layout[QStringLiteral("pageHeight")].toDouble(213.0));
+    line_count_->setValue(layout[QStringLiteral("lineCount")].toInt(22));
+    first_line_->setValue(layout[QStringLiteral("firstLine")].toInt(1));
+    char_size_->setValue(layout[QStringLiteral("charSize")].toDouble(0.0));
+    chars_per_line_->setValue(layout[QStringLiteral("charsPerLine")].toInt(0));
+    style_enabled_->setChecked(layout[QStringLiteral("styleEnabled")].toBool(false));
+    style_size_cv_->setValue(layout[QStringLiteral("styleSizeCv")].toDouble(0.08));
+    style_gap_mean_->setValue(layout[QStringLiteral("styleGapMean")].toDouble(3.0));
+    style_gap_cv_->setValue(layout[QStringLiteral("styleGapCv")].toDouble(0.30));
+    style_baseline_drift_->setValue(
+        layout[QStringLiteral("styleBaselineDrift")].toDouble(0.5));
+    style_baseline_slope_->setValue(
+        layout[QStringLiteral("styleBaselineSlope")].toDouble(0.03));
+
+    const QJsonObject render = root[QStringLiteral("render")].toObject();
+    slant_->setValue(render[QStringLiteral("slant")].toDouble(0.0));
+    jitter_->setValue(render[QStringLiteral("jitter")].toDouble(0.0));
+    pressure_amp_->setValue(render[QStringLiteral("pressureAmp")].toDouble(0.30));
+
+    const QJsonObject model = root[QStringLiteral("styleModel")].toObject();
+    style_model_enabled_->setChecked(model[QStringLiteral("enabled")].toBool(false));
+    style_model_path_->setText(model[QStringLiteral("path")].toString());
+    style_model_strength_->setValue(model[QStringLiteral("strength")].toDouble(1.0));
+
+    updateModeEnabled();
+    refresh();
+    return true;
+}
+
+bool MainWindow::loadProjectFile(const QString& path, QString* error) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        *error = QStringLiteral("无法打开：%1").arg(path);
+        return false;
+    }
+    QJsonParseError parse_error{};
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parse_error);
+    if (!document.isObject()) {
+        *error = QStringLiteral("JSON 解析失败：%1").arg(parse_error.errorString());
+        return false;
+    }
+
+    loading_ = true;
+    const bool ok = applyProjectJson(document.object(), error);
+    loading_ = false;
+    if (!ok) {
+        return false;
+    }
+    project_path_ = QFileInfo(path).absoluteFilePath();
+    dirty_ = false;
+    addRecentFile(project_path_);
+    updateWindowTitle();
+    return true;
+}
+
+bool MainWindow::saveProjectFile(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    file.write(QJsonDocument(projectJson()).toJson(QJsonDocument::Indented));
+    if (file.error() != QFileDevice::NoError) {
+        return false;
+    }
+    file.close();
+
+    project_path_ = QFileInfo(path).absoluteFilePath();
+    dirty_ = false;
+    addRecentFile(project_path_);
+    updateWindowTitle();
+    return true;
+}
+
+void MainWindow::addRecentFile(const QString& path) {
+    const QString absolute = QFileInfo(path).absoluteFilePath();
+    recent_files_.removeAll(absolute);
+    recent_files_.prepend(absolute);
+    while (recent_files_.size() > 8) {
+        recent_files_.removeLast();
+    }
+    QSettings settings;
+    settings.setValue(QStringLiteral("recentFiles"), recent_files_);
+    updateRecentMenu();
+}
+
+void MainWindow::updateRecentMenu() {
+    if (recent_menu_ == nullptr) {
+        return;
+    }
+    recent_menu_->clear();
+    if (recent_files_.isEmpty()) {
+        auto* empty = recent_menu_->addAction(QStringLiteral("（无）"));
+        empty->setEnabled(false);
+        return;
+    }
+    for (const QString& path : recent_files_) {
+        auto* action = recent_menu_->addAction(QFileInfo(path).fileName());
+        action->setToolTip(path);
+        connect(action, &QAction::triggered, this, [this, path] {
+            if (!maybeSave()) {
+                return;
+            }
+            QString error;
+            if (!loadProjectFile(path, &error)) {
+                QMessageBox::warning(this, QStringLiteral("打开失败"), error);
+            }
+        });
+    }
+    recent_menu_->addSeparator();
+    auto* clear = recent_menu_->addAction(QStringLiteral("清除最近记录"));
+    connect(clear, &QAction::triggered, this, [this] {
+        recent_files_.clear();
+        QSettings settings;
+        settings.remove(QStringLiteral("recentFiles"));
+        updateRecentMenu();
+    });
+}
+
+void MainWindow::updateWindowTitle() {
+    const QString name = project_path_.isEmpty()
+                             ? QStringLiteral("未命名")
+                             : QFileInfo(project_path_).fileName();
+    setWindowTitle(QStringLiteral("HandwritingRobot — %1%2")
+                       .arg(name, dirty_ ? QStringLiteral(" *") : QString()));
+}
+
+void MainWindow::restoreSettings() {
+    QSettings settings;
+    const QByteArray geometry = settings.value(QStringLiteral("window/geometry")).toByteArray();
+    if (!geometry.isEmpty()) {
+        restoreGeometry(geometry);
+    }
+    const QByteArray state = settings.value(QStringLiteral("window/state")).toByteArray();
+    if (!state.isEmpty()) {
+        restoreState(state);
+    }
+    if (settings.contains(QStringLiteral("view/showCells"))) {
+        show_cells_->setChecked(settings.value(QStringLiteral("view/showCells")).toBool());
+    }
+    if (settings.contains(QStringLiteral("view/showRules"))) {
+        show_rules_->setChecked(settings.value(QStringLiteral("view/showRules")).toBool());
+    }
+    if (settings.contains(QStringLiteral("layout/mode"))) {
+        mode_combo_->setCurrentIndex(
+            settings.value(QStringLiteral("layout/mode")).toInt());
+        page_width_->setValue(
+            settings.value(QStringLiteral("layout/pageWidth"), 150.0).toDouble());
+        page_height_->setValue(
+            settings.value(QStringLiteral("layout/pageHeight"), 213.0).toDouble());
+        line_count_->setValue(
+            settings.value(QStringLiteral("layout/lineCount"), 22).toInt());
+        first_line_->setValue(
+            settings.value(QStringLiteral("layout/firstLine"), 1).toInt());
+        char_size_->setValue(
+            settings.value(QStringLiteral("layout/charSize"), 0.0).toDouble());
+        chars_per_line_->setValue(
+            settings.value(QStringLiteral("layout/charsPerLine"), 0).toInt());
+        style_enabled_->setChecked(
+            settings.value(QStringLiteral("layout/styleEnabled"), false).toBool());
+        style_size_cv_->setValue(
+            settings.value(QStringLiteral("layout/styleSizeCv"), 0.08).toDouble());
+        style_gap_mean_->setValue(
+            settings.value(QStringLiteral("layout/styleGapMean"), 3.0).toDouble());
+        style_gap_cv_->setValue(
+            settings.value(QStringLiteral("layout/styleGapCv"), 0.30).toDouble());
+        style_baseline_drift_->setValue(
+            settings.value(QStringLiteral("layout/styleBaselineDrift"), 0.5).toDouble());
+        style_baseline_slope_->setValue(
+            settings.value(QStringLiteral("layout/styleBaselineSlope"), 0.03).toDouble());
+    }
+    if (settings.contains(QStringLiteral("render/slant"))) {
+        slant_->setValue(
+            settings.value(QStringLiteral("render/slant"), 0.0).toDouble());
+        jitter_->setValue(
+            settings.value(QStringLiteral("render/jitter"), 0.0).toDouble());
+        pressure_amp_->setValue(
+            settings.value(QStringLiteral("render/pressureAmp"), 0.30).toDouble());
+    }
+    if (settings.contains(QStringLiteral("model/path"))) {
+        style_model_enabled_->setChecked(
+            settings.value(QStringLiteral("model/enabled"), false).toBool());
+        style_model_path_->setText(
+            settings.value(QStringLiteral("model/path")).toString());
+        style_model_strength_->setValue(
+            settings.value(QStringLiteral("model/strength"), 1.0).toDouble());
+    }
+    recent_files_ = settings.value(QStringLiteral("recentFiles")).toStringList();
+    updateRecentMenu();
+}
+
+void MainWindow::saveSettings() {
+    QSettings settings;
+    settings.setValue(QStringLiteral("window/geometry"), saveGeometry());
+    settings.setValue(QStringLiteral("window/state"), saveState());
+    settings.setValue(QStringLiteral("view/showCells"), show_cells_->isChecked());
+    settings.setValue(QStringLiteral("view/showRules"), show_rules_->isChecked());
+    settings.setValue(QStringLiteral("layout/mode"), mode_combo_->currentIndex());
+    settings.setValue(QStringLiteral("layout/pageWidth"), page_width_->value());
+    settings.setValue(QStringLiteral("layout/pageHeight"), page_height_->value());
+    settings.setValue(QStringLiteral("layout/lineCount"), line_count_->value());
+    settings.setValue(QStringLiteral("layout/firstLine"), first_line_->value());
+    settings.setValue(QStringLiteral("layout/charSize"), char_size_->value());
+    settings.setValue(QStringLiteral("layout/charsPerLine"), chars_per_line_->value());
+    settings.setValue(QStringLiteral("layout/styleEnabled"), style_enabled_->isChecked());
+    settings.setValue(QStringLiteral("layout/styleSizeCv"), style_size_cv_->value());
+    settings.setValue(QStringLiteral("layout/styleGapMean"), style_gap_mean_->value());
+    settings.setValue(QStringLiteral("layout/styleGapCv"), style_gap_cv_->value());
+    settings.setValue(QStringLiteral("layout/styleBaselineDrift"),
+                      style_baseline_drift_->value());
+    settings.setValue(QStringLiteral("layout/styleBaselineSlope"),
+                      style_baseline_slope_->value());
+    settings.setValue(QStringLiteral("render/slant"), slant_->value());
+    settings.setValue(QStringLiteral("render/jitter"), jitter_->value());
+    settings.setValue(QStringLiteral("render/pressureAmp"), pressure_amp_->value());
+    settings.setValue(QStringLiteral("model/enabled"), style_model_enabled_->isChecked());
+    settings.setValue(QStringLiteral("model/path"), style_model_path_->text());
+    settings.setValue(QStringLiteral("model/strength"), style_model_strength_->value());
+    settings.setValue(QStringLiteral("recentFiles"), recent_files_);
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if (!maybeSave()) {
+        event->ignore();
+        return;
+    }
+    saveSettings();
+    event->accept();
+}
+
 void MainWindow::resetLayoutDefaults() {
     mode_combo_->setCurrentIndex(0);
     page_width_->setValue(kNotebookWidthMm);
@@ -1077,14 +1606,19 @@ void MainWindow::resetLayoutDefaults() {
 }
 
 void MainWindow::exportGcode() {
+    ensurePages();
     const Rendered rendered = renderNow();
     if (!rendered.ok) {
         QMessageBox::warning(this, QStringLiteral("无法导出"), rendered.error);
         return;
     }
 
+    const QString default_name =
+        pages_.size() > 1
+            ? QStringLiteral("handwriting-p%1.nc").arg(current_page_ + 1)
+            : QStringLiteral("handwriting.nc");
     const QString path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("导出 G 代码"), QStringLiteral("handwriting.nc"),
+        this, QStringLiteral("导出当前页 G 代码"), default_name,
         QStringLiteral("G 代码 (*.nc *.gcode *.tap *.txt)"));
     if (path.isEmpty()) {
         return;
@@ -1184,4 +1718,29 @@ void MainWindow::setDemoStyleModel(bool enabled) {
     if (style_model_enabled_ != nullptr) {
         style_model_enabled_->setChecked(enabled);
     }
+}
+
+void MainWindow::setDemoPage(int page) {
+    current_page_ = std::max(0, page);
+    refresh();
+}
+
+bool MainWindow::selfTestProject(const QString& path) {
+    setDemoText(QStringLiteral("项目保存测试\n第二行"));
+    setDemoStyle(true);
+    if (!saveProjectFile(path)) {
+        return false;
+    }
+    const QString expected = text_edit_->toPlainText();
+    const bool expected_style = style_enabled_->isChecked();
+
+    text_edit_->setPlainText(QStringLiteral("changed"));
+    style_enabled_->setChecked(false);
+
+    QString error;
+    if (!loadProjectFile(path, &error)) {
+        return false;
+    }
+    return text_edit_->toPlainText() == expected &&
+           style_enabled_->isChecked() == expected_style;
 }

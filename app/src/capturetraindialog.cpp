@@ -171,9 +171,11 @@ void CaptureTrainDialog::buildTrainingTab(QTabWidget* tabs) {
     layout->addLayout(form);
 
     auto* buttons = new QHBoxLayout;
+    inspect_button_ = new QPushButton(QStringLiteral("体检数据"));
     train_button_ = new QPushButton(QStringLiteral("开始训练"));
     cancel_button_ = new QPushButton(QStringLiteral("取消"));
     cancel_button_->setEnabled(false);
+    buttons->addWidget(inspect_button_);
     buttons->addWidget(train_button_);
     buttons->addWidget(cancel_button_);
     buttons->addStretch();
@@ -199,6 +201,8 @@ void CaptureTrainDialog::buildTrainingTab(QTabWidget* tabs) {
             data_path_->setText(path);
         }
     });
+    connect(inspect_button_, &QPushButton::clicked, this,
+            &CaptureTrainDialog::inspectData);
     connect(train_button_, &QPushButton::clicked, this,
             &CaptureTrainDialog::startTraining);
     connect(cancel_button_, &QPushButton::clicked, this,
@@ -435,6 +439,46 @@ void CaptureTrainDialog::saveDemoCapture() {
     canvas_->setDemoStroke();
     addSample();
     exportJson();
+}
+
+void CaptureTrainDialog::inspectData() {
+    const QString data = data_path_->text().trimmed();
+    if (data.isEmpty() || !QFileInfo::exists(data)) {
+        QMessageBox::warning(this, QStringLiteral("缺少数据"),
+                             QStringLiteral("请先选择采集 JSON。"));
+        return;
+    }
+
+    auto* process = new QProcess(this);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    process->setWorkingDirectory(repoRoot());
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString src = repoRoot() + QStringLiteral("/src");
+    const QString existing = env.value(QStringLiteral("PYTHONPATH"));
+    env.insert(QStringLiteral("PYTHONPATH"),
+               existing.isEmpty() ? src : src + QDir::listSeparator() + existing);
+    env.insert(QStringLiteral("PYTHONIOENCODING"), QStringLiteral("utf-8"));
+    env.insert(QStringLiteral("PYTHONUNBUFFERED"), QStringLiteral("1"));
+    process->setProcessEnvironment(env);
+
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, process] {
+        appendLog(QString::fromUtf8(process->readAllStandardOutput()));
+    });
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this, process](int, QProcess::ExitStatus) {
+                process->deleteLater();
+                appendLog(QStringLiteral(
+                    "体检结束。有警告也可以训练，但建议先补压感/减少缺字。"));
+            });
+
+    appendLog(QStringLiteral("开始体检：%1").arg(data));
+    process->start(python_path_->text().trimmed(),
+                   {QStringLiteral("-m"), QStringLiteral("handwriting.cli"),
+                    QStringLiteral("inspect"), data});
+    if (!process->waitForStarted(3000)) {
+        appendLog(QStringLiteral("无法启动 Python：%1").arg(python_path_->text()));
+        process->deleteLater();
+    }
 }
 
 void CaptureTrainDialog::startTraining() {

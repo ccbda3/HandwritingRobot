@@ -13,6 +13,35 @@ namespace {
 
 constexpr double kDefaultGridCharSize = 20.0;
 
+struct Utf8Char {
+    std::string bytes;
+    std::size_t offset{0};
+};
+
+[[nodiscard]] std::vector<Utf8Char> split_utf8_with_offsets(const std::string& text) {
+    std::vector<Utf8Char> chars;
+    chars.reserve(text.size());
+    for (std::size_t i = 0; i < text.size();) {
+        const unsigned char lead = static_cast<unsigned char>(text[i]);
+        std::size_t length = 1;
+        if ((lead & 0x80U) == 0) {
+            length = 1;
+        } else if ((lead & 0xE0U) == 0xC0U) {
+            length = 2;
+        } else if ((lead & 0xF0U) == 0xE0U) {
+            length = 3;
+        } else if ((lead & 0xF8U) == 0xF0U) {
+            length = 4;
+        }
+        if (i + length > text.size()) {
+            length = text.size() - i;
+        }
+        chars.push_back({text.substr(i, length), i});
+        i += length;
+    }
+    return chars;
+}
+
 [[nodiscard]] double notebook_pitch(const Settings& settings) {
     if (settings.line_count < 1) {
         throw std::invalid_argument("line_count 必须 ≥ 1");
@@ -230,6 +259,89 @@ Page compute_styled(const std::vector<std::size_t>& row_char_counts,
     page.width_mm = std::max(nominal_width, max_right + settings.margin_x_mm);
     page.height_mm = std::max(nominal_height, max_bottom + settings.margin_y_mm);
     return page;
+}
+
+std::vector<PageText> paginate(const std::string& text, const Settings& settings) {
+    const int per_line = resolve_chars_per_line(settings);
+    int lines_per_page = 1;
+    if (settings.mode == Mode::Notebook) {
+        lines_per_page =
+            std::max(1, settings.line_count - std::max(0, settings.first_line - 1));
+    } else {
+        const double char_size = resolve_char_size(settings);
+        const double usable = settings.page_height_mm - 2.0 * settings.margin_y_mm;
+        lines_per_page = std::max(
+            1, static_cast<int>(std::floor(
+                   usable / std::max(1e-9, char_size + settings.line_gap_mm))));
+    }
+
+    const auto chars = split_utf8_with_offsets(text);
+    std::vector<PageText> pages;
+    PageText page;
+    int page_lines = 0;
+    bool page_started = false;
+
+    auto finish_page = [&] {
+        if (page_started) {
+            pages.push_back(std::move(page));
+            page = PageText{};
+            page_lines = 0;
+            page_started = false;
+        }
+    };
+
+    std::vector<Utf8Char> line;
+    std::size_t line_start = 0;
+
+    auto flush_line = [&] {
+        const std::size_t per = static_cast<std::size_t>(per_line);
+        const int chunks =
+            std::max(1, static_cast<int>((line.size() + per - 1) / per));
+        for (int c = 0; c < chunks; ++c) {
+            const std::size_t begin = static_cast<std::size_t>(c) * per;
+            const std::size_t end = std::min(line.size(), begin + per);
+            if (page_lines >= lines_per_page) {
+                finish_page();
+            }
+            if (page_lines > 0) {
+                page.text += '\n';
+            }
+            if (!page_started) {
+                page.start_offset = line.empty() ? line_start : line[begin].offset;
+                page_started = true;
+            }
+            for (std::size_t i = begin; i < end; ++i) {
+                page.text += line[i].bytes;
+                page.char_offsets.push_back(line[i].offset);
+            }
+            ++page_lines;
+        }
+        line.clear();
+    };
+
+    for (const auto& ch : chars) {
+        if (ch.bytes == "\n") {
+            flush_line();
+            line_start = ch.offset + 1;
+        } else {
+            if (line.empty()) {
+                line_start = ch.offset;
+            }
+            line.push_back(ch);
+        }
+    }
+
+    const bool ends_with_newline = !text.empty() && text.back() == '\n';
+    if (!line.empty() || !ends_with_newline || pages.empty()) {
+        flush_line();
+    }
+    if (page_started) {
+        pages.push_back(std::move(page));
+    }
+    if (pages.empty()) {
+        pages.push_back(PageText{});
+    }
+    return pages;
 }
 
 Page compute(std::size_t char_count, const Settings& settings) {

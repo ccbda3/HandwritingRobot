@@ -12,7 +12,9 @@
 
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,6 +34,10 @@ class QPlainTextEdit;
 class NotebookEditor;
 class CaptureTrainDialog;
 class QSpinBox;
+class QAction;
+class QCloseEvent;
+class QJsonObject;
+class QMenu;
 class QTimer;
 class QDockWidget;
 class MachinePanel;
@@ -49,6 +55,9 @@ public:
     void setDemoText(const QString& text);
     void setDemoStyle(bool enabled);
     void setDemoStyleModel(bool enabled);
+    void setDemoPage(int page);
+    /// 仅供自测：保存 → 改坏 → 加载，验证项目往返
+    bool selfTestProject(const QString& path);
 
     /// 仅供快照：拿到选项弹窗指针。
     [[nodiscard]] QDialog* settingsDialog() const noexcept { return settings_dialog_; }
@@ -69,11 +78,21 @@ private slots:
     void updateTextPreview();
     void showCaptureTrain();
     void applyTrainedModel(const QString& weights);
+    void prevPage();
+    void nextPage();
+    void newProject();
+    void openProject();
+    void saveProject();
+    void saveProjectAs();
+    void markDirty();
     void resetLayoutDefaults();
     void exportGcode();
     void exportPreviewImage();
     void browseGlyphCache();
     void openGlyphCacheFolder();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     struct Rendered {
@@ -99,6 +118,7 @@ private:
     [[nodiscard]] handwriting::layout::StyleProfile styleProfile() const;
     [[nodiscard]] handwriting::gcode::PlotSettings plotSettings() const;
     [[nodiscard]] Rendered renderNow() const;
+    [[nodiscard]] std::optional<std::size_t> sourceOffsetForGlyph(int index) const;
     void updateStatus(const Rendered& rendered);
     /// 供机器面板取用当前 G 代码。只返回缓存，不重新生成 ——
     /// 面板每 20ms 轮询一次，这里若真去生成会把界面卡死。
@@ -107,6 +127,20 @@ private:
     }
 
     void updateModeEnabled();
+    void ensurePages();
+    void updatePageNav();
+
+    // ---- 项目文件 ----
+    [[nodiscard]] bool maybeSave();
+    [[nodiscard]] bool loadProjectFile(const QString& path, QString* error);
+    [[nodiscard]] bool saveProjectFile(const QString& path);
+    void addRecentFile(const QString& path);
+    void updateRecentMenu();
+    void updateWindowTitle();
+    [[nodiscard]] QJsonObject projectJson() const;
+    [[nodiscard]] bool applyProjectJson(const QJsonObject& root, QString* error);
+    void restoreSettings();
+    void saveSettings();
 
     // ---- 文本与画布 ----
     QPlainTextEdit* text_edit_{nullptr};  // 隐藏的文本模型，真正渲染用它
@@ -120,6 +154,15 @@ private:
     QLineEdit* cell_editor_{nullptr};
     int edit_index_{-1};
     Rendered last_rendered_;
+
+    // ---- 分页 ----
+    std::vector<handwriting::layout::PageText> pages_;
+    std::string current_page_text_;
+    std::vector<std::size_t> current_page_char_offsets_;
+    int current_page_{0};
+    bool pages_ready_{false};
+    QAction* prev_page_action_{nullptr};
+    QAction* next_page_action_{nullptr};
 
     // ---- 版面 ----
     QComboBox* mode_combo_{nullptr};
@@ -167,5 +210,15 @@ private:
     MachinePanel* machine_panel_{nullptr};
     QDockWidget* dock_{nullptr};
     QDockWidget* params_dock_{nullptr};
+
+    // ---- 项目 ----
+    QString project_path_;
+    QStringList recent_files_;
+    QMenu* recent_menu_{nullptr};
+    QAction* save_action_{nullptr};
+    QAction* save_as_action_{nullptr};
+    bool dirty_{false};
+    bool loading_{true};
+
     std::string current_program_;
 };

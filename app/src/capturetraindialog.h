@@ -16,8 +16,10 @@
 
 class QCheckBox;
 class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
@@ -53,6 +55,7 @@ private:
     void buildCaptureTab(QTabWidget* tabs);
     void buildTrainingTab(QTabWidget* tabs);
     void updateCaptureStats();
+    void refreshSampleList();
     void appendLog(const QString& text);
     void setTrainingBusy(bool busy);
     void startProcess(const QStringList& args, bool exportStage);
@@ -73,6 +76,9 @@ private:
     QLabel* capture_stats_{nullptr};
     QLabel* capture_status_{nullptr};
     QLineEdit* capture_path_{nullptr};
+    QListWidget* sample_list_{nullptr};
+    QPushButton* delete_sample_button_{nullptr};
+    QPushButton* clear_samples_button_{nullptr};
     QVector<QJsonObject> samples_;
     QVector<QJsonObject> lines_;
 
@@ -84,6 +90,7 @@ private:
     QCheckBox* auto_export_{nullptr};
     QSpinBox* epochs_{nullptr};
     QSpinBox* n_points_{nullptr};
+    QDoubleSpinBox* min_cost_{nullptr};
     QPushButton* inspect_button_{nullptr};
     QPushButton* train_button_{nullptr};
     QPushButton* cancel_button_{nullptr};
@@ -94,5 +101,6 @@ private:
     QString last_model_path_;
     QString export_path_;
     QString last_export_path_;
+    int inspect_issues_{-1};
     bool exporting_{false};
 };

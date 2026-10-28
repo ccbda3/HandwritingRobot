@@ -88,6 +88,24 @@ def test_extra_stroke_is_ignored() -> None:
     assert len(aligned) == 2
 
 
+def test_min_cost_filters_bad_pairs() -> None:
+    reference = StrokeSet(
+        [
+            _stroke([(0.2, 0.2), (0.5, 0.2)]),
+            _stroke([(0.5, 0.2), (0.8, 0.8)]),
+        ],
+        "十",
+    )
+    captured = StrokeSet(
+        [reference.strokes[0], _stroke([(0.8, 0.2), (0.8, 0.8)])],
+        "十",
+    )
+    all_pairs = align_stroke_sets(captured, reference, n_points=24)
+    filtered = align_stroke_sets(captured, reference, n_points=24, min_cost=0.01)
+    assert len(all_pairs) == 2
+    assert len(filtered) == 1
+
+
 def test_build_aligned_examples_uses_reference_as_centerline() -> None:
     reference = _reference()
     captured = _transform(reference, 0.8, 0.1, 0.05)

@@ -516,6 +516,11 @@ void MainWindow::buildMenus() {
     export_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
     connect(export_action, &QAction::triggered, this, &MainWindow::exportGcode);
 
+    auto* export_all_action =
+        file_menu->addAction(QStringLiteral("导出全部页 G 代码(&A)..."));
+    export_all_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Alt+E")));
+    connect(export_all_action, &QAction::triggered, this, &MainWindow::exportAllPages);
+
     auto* image_action = file_menu->addAction(QStringLiteral("导出预览图(&P)..."));
     image_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+E")));
     connect(image_action, &QAction::triggered, this, &MainWindow::exportPreviewImage);
@@ -1536,6 +1541,16 @@ void MainWindow::restoreSettings() {
         style_model_strength_->setValue(
             settings.value(QStringLiteral("model/strength"), 1.0).toDouble());
     }
+    if (settings.contains(QStringLiteral("machine/feed"))) {
+        feed_draw_->setValue(
+            settings.value(QStringLiteral("machine/feed"), 8000.0).toDouble());
+        pen_up_z_->setValue(
+            settings.value(QStringLiteral("machine/penUpZ"), 0.0).toDouble());
+        pen_down_z_->setValue(
+            settings.value(QStringLiteral("machine/penDownZ"), 6.0).toDouble());
+        invert_y_->setChecked(
+            settings.value(QStringLiteral("machine/invertY"), false).toBool());
+    }
     recent_files_ = settings.value(QStringLiteral("recentFiles")).toStringList();
     updateRecentMenu();
 }
@@ -1567,6 +1582,10 @@ void MainWindow::saveSettings() {
     settings.setValue(QStringLiteral("model/enabled"), style_model_enabled_->isChecked());
     settings.setValue(QStringLiteral("model/path"), style_model_path_->text());
     settings.setValue(QStringLiteral("model/strength"), style_model_strength_->value());
+    settings.setValue(QStringLiteral("machine/feed"), feed_draw_->value());
+    settings.setValue(QStringLiteral("machine/penUpZ"), pen_up_z_->value());
+    settings.setValue(QStringLiteral("machine/penDownZ"), pen_down_z_->value());
+    settings.setValue(QStringLiteral("machine/invertY"), invert_y_->isChecked());
     settings.setValue(QStringLiteral("recentFiles"), recent_files_);
 }
 
@@ -1641,6 +1660,70 @@ void MainWindow::exportGcode() {
             .arg(QFileInfo(path).fileName())
             .arg(program.stats.line_count)
             .arg(static_cast<double>(program.stats.line_count) / kGrblLinesPerSecond, 0, 'f', 1),
+        6000);
+}
+
+void MainWindow::exportAllPages() {
+    ensurePages();
+    if (pages_.empty()) {
+        QMessageBox::warning(this, QStringLiteral("无法导出"),
+                             QStringLiteral("当前没有可导出的页面"));
+        return;
+    }
+    const QString base = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出全部页 G 代码"), QStringLiteral("handwriting.nc"),
+        QStringLiteral("G 代码 (*.nc *.gcode *.tap *.txt)"));
+    if (base.isEmpty()) {
+        return;
+    }
+
+    const QFileInfo info(base);
+    const QString dir = info.absolutePath();
+    const QString stem = info.completeBaseName();
+    const QString suffix =
+        info.suffix().isEmpty() ? QStringLiteral("nc") : info.suffix();
+
+    const int saved_page = current_page_;
+    int written = 0;
+    int skipped = 0;
+    for (int i = 0; i < static_cast<int>(pages_.size()); ++i) {
+        current_page_ = i;
+        current_page_text_ = pages_[i].text;
+        current_page_char_offsets_ = pages_[i].char_offsets;
+        const Rendered rendered = renderNow();
+        if (!rendered.ok) {
+            ++skipped;
+            continue;
+        }
+        const auto program = handwriting::gcode::glyphs_to_gcode(
+            rendered.glyphs, rendered.page, plotSettings());
+        const QString path =
+            pages_.size() == 1
+                ? base
+                : dir + QStringLiteral("/") + stem +
+                      QStringLiteral("-p%1.").arg(i + 1) + suffix;
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            ++skipped;
+            continue;
+        }
+        file.write(program.text.c_str());
+        file.close();
+        ++written;
+    }
+
+    current_page_ = saved_page;
+    refresh();
+    if (written == 0) {
+        QMessageBox::warning(this, QStringLiteral("导出失败"),
+                             QStringLiteral("没有页面成功导出，请检查缺字或写入权限。"));
+        return;
+    }
+    statusBar()->showMessage(
+        QStringLiteral("已导出 %1 页 G 代码%2")
+            .arg(written)
+            .arg(skipped > 0 ? QStringLiteral("（跳过 %1 页）").arg(skipped)
+                             : QString()),
         6000);
 }
 

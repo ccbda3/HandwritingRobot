@@ -87,6 +87,7 @@ private slots:
     void markDirty();
     void resetLayoutDefaults();
     void exportGcode();
+    void exportAllPages();
     void exportPreviewImage();
     void browseGlyphCache();
     void openGlyphCacheFolder();

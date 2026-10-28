@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -16,6 +17,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcessEnvironment>
@@ -80,6 +82,19 @@ void CaptureTrainDialog::buildCaptureTab(QTabWidget* tabs) {
     stats_row->addWidget(clear);
     layout->addLayout(stats_row);
 
+    auto* list_row = new QHBoxLayout;
+    sample_list_ = new QListWidget;
+    sample_list_->setMaximumHeight(110);
+    list_row->addWidget(sample_list_, 1);
+    auto* list_buttons = new QVBoxLayout;
+    delete_sample_button_ = new QPushButton(QStringLiteral("删除选中"));
+    clear_samples_button_ = new QPushButton(QStringLiteral("清空已采集"));
+    list_buttons->addWidget(delete_sample_button_);
+    list_buttons->addWidget(clear_samples_button_);
+    list_buttons->addStretch();
+    list_row->addLayout(list_buttons);
+    layout->addLayout(list_row);
+
     auto* path_row = new QHBoxLayout;
     capture_path_ = new QLineEdit(defaultCapturePath());
     auto* browse = new QPushButton(QStringLiteral("保存到…"));
@@ -111,6 +126,7 @@ void CaptureTrainDialog::buildCaptureTab(QTabWidget* tabs) {
                     guide_edit_->setText(guide_edit_->text().left(1));
                 }
                 canvas_->setGuide(guide_edit_->text(), line);
+                refreshSampleList();
                 updateCaptureStats();
             });
     connect(guide_edit_, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -130,6 +146,31 @@ void CaptureTrainDialog::buildCaptureTab(QTabWidget* tabs) {
     });
     connect(add, &QPushButton::clicked, this, &CaptureTrainDialog::addSample);
     connect(export_button, &QPushButton::clicked, this, &CaptureTrainDialog::exportJson);
+    connect(delete_sample_button_, &QPushButton::clicked, this, [this] {
+        const bool line = mode_combo_->currentIndex() == 1;
+        const int row = sample_list_->currentRow();
+        if (row < 0) {
+            return;
+        }
+        if (line) {
+            lines_.removeAt(row);
+        } else {
+            samples_.removeAt(row);
+        }
+        refreshSampleList();
+        updateCaptureStats();
+    });
+    connect(clear_samples_button_, &QPushButton::clicked, this, [this] {
+        const bool line = mode_combo_->currentIndex() == 1;
+        if (line) {
+            lines_.clear();
+        } else {
+            samples_.clear();
+        }
+        refreshSampleList();
+        updateCaptureStats();
+    });
+    refreshSampleList();
     updateCaptureStats();
 }
 
@@ -159,6 +200,13 @@ void CaptureTrainDialog::buildTrainingTab(QTabWidget* tabs) {
     n_points_->setRange(8, 128);
     n_points_->setValue(48);
     form->addRow(QStringLiteral("每笔点数"), n_points_);
+    min_cost_ = new QDoubleSpinBox;
+    min_cost_->setRange(0.0, 2.0);
+    min_cost_->setSingleStep(0.05);
+    min_cost_->setDecimals(2);
+    min_cost_->setValue(0.35);
+    min_cost_->setToolTip(QStringLiteral("对齐匹配代价上限；0 表示不过滤"));
+    form->addRow(QStringLiteral("对齐阈值"), min_cost_);
     align_check_ = new QCheckBox(QStringLiteral("对齐到标准骨架（--align）"));
     align_check_->setChecked(true);
     form->addRow(QString(), align_check_);
@@ -201,6 +249,9 @@ void CaptureTrainDialog::buildTrainingTab(QTabWidget* tabs) {
             data_path_->setText(path);
         }
     });
+    connect(data_path_, &QLineEdit::textChanged, this, [this] {
+        inspect_issues_ = -1;
+    });
     connect(inspect_button_, &QPushButton::clicked, this,
             &CaptureTrainDialog::inspectData);
     connect(train_button_, &QPushButton::clicked, this,
@@ -225,6 +276,30 @@ void CaptureTrainDialog::updateCaptureStats() {
             .arg(canvas_->pressureSupported() ? QStringLiteral("有") : QStringLiteral("无")));
 }
 
+void CaptureTrainDialog::refreshSampleList() {
+    if (sample_list_ == nullptr) {
+        return;
+    }
+    sample_list_->clear();
+    const bool line = mode_combo_->currentIndex() == 1;
+    const auto& items = line ? lines_ : samples_;
+    for (int i = 0; i < items.size(); ++i) {
+        const QJsonObject& item = items.at(i);
+        const QString text =
+            line ? item.value(QStringLiteral("text")).toString()
+                 : item.value(QStringLiteral("char")).toString();
+        const int strokes = item.value(QStringLiteral("strokeCount")).toInt();
+        sample_list_->addItem(
+            QStringLiteral("%1. %2 · %3 笔").arg(i + 1).arg(text).arg(strokes));
+    }
+    if (delete_sample_button_ != nullptr) {
+        delete_sample_button_->setEnabled(!items.isEmpty());
+    }
+    if (clear_samples_button_ != nullptr) {
+        clear_samples_button_->setEnabled(!items.isEmpty());
+    }
+}
+
 void CaptureTrainDialog::addSample() {
     const bool line = mode_combo_->currentIndex() == 1;
     QString text = guide_edit_->text().trimmed();
@@ -247,6 +322,7 @@ void CaptureTrainDialog::addSample() {
         samples_.append(buildSampleObject(text));
     }
     canvas_->clear();
+    refreshSampleList();
     updateCaptureStats();
     capture_status_->setText(
         QStringLiteral("已添加「%1」，共 %2 条。")
@@ -461,14 +537,36 @@ void CaptureTrainDialog::inspectData() {
     env.insert(QStringLiteral("PYTHONUNBUFFERED"), QStringLiteral("1"));
     process->setProcessEnvironment(env);
 
-    connect(process, &QProcess::readyReadStandardOutput, this, [this, process] {
-        appendLog(QString::fromUtf8(process->readAllStandardOutput()));
+    auto* buffer = new QString;
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, process, buffer] {
+        const QString text = QString::fromUtf8(process->readAllStandardOutput());
+        buffer->append(text);
+        appendLog(text);
     });
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-            [this, process](int, QProcess::ExitStatus) {
+            [this, process, buffer](int exitCode, QProcess::ExitStatus) {
+                if (exitCode != 0) {
+                    inspect_issues_ = -1;
+                    delete buffer;
+                    process->deleteLater();
+                    appendLog(QStringLiteral("体检失败。"));
+                    return;
+                }
+                static const QRegularExpression re(
+                    QStringLiteral("发现\\s+(\\d+)\\s+个问题"));
+                const auto match = re.match(*buffer);
+                inspect_issues_ = match.hasMatch() ? match.captured(1).toInt() : 0;
+                delete buffer;
                 process->deleteLater();
-                appendLog(QStringLiteral(
-                    "体检结束。有警告也可以训练，但建议先补压感/减少缺字。"));
+                if (inspect_issues_ > 0) {
+                    appendLog(QStringLiteral("体检发现 %1 个问题。").arg(inspect_issues_));
+                    QMessageBox::warning(
+                        this, QStringLiteral("体检发现问题"),
+                        QStringLiteral("发现 %1 个问题，详见日志。\n仍可训练，但建议先处理。")
+                            .arg(inspect_issues_));
+                } else {
+                    appendLog(QStringLiteral("体检通过。"));
+                }
             });
 
     appendLog(QStringLiteral("开始体检：%1").arg(data));
@@ -498,6 +596,15 @@ void CaptureTrainDialog::startTraining() {
                              QStringLiteral("请填写 Python 可执行文件路径。"));
         return;
     }
+    if (inspect_issues_ > 0) {
+        const auto reply = QMessageBox::question(
+            this, QStringLiteral("体检有问题"),
+            QStringLiteral("上次体检发现 %1 个问题，仍要训练吗？").arg(inspect_issues_),
+            QMessageBox::Yes | QMessageBox::No);
+        if (reply != QMessageBox::Yes) {
+            return;
+        }
+    }
     const QString out = model_out_->text().trimmed();
     if (out.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("缺少输出路径"),
@@ -510,6 +617,8 @@ void CaptureTrainDialog::startTraining() {
                         QStringLiteral("train"), QStringLiteral("--data"), data,
                         QStringLiteral("--epochs"), QString::number(epochs_->value()),
                         QStringLiteral("--n-points"), QString::number(n_points_->value()),
+                        QStringLiteral("--min-align-cost"),
+                        QString::number(min_cost_->value(), 'f', 2),
                         QStringLiteral("--out"), out};
     if (align_check_->isChecked()) {
         args << QStringLiteral("--align");

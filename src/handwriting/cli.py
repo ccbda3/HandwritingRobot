@@ -252,6 +252,12 @@ def _build_parser() -> argparse.ArgumentParser:
     train_p.add_argument("--mixtures", type=int, default=5)
     train_p.add_argument("--n-points", type=int, default=48)
     train_p.add_argument("--smooth", type=int, default=5)
+    train_p.add_argument(
+        "--min-align-cost",
+        type=float,
+        default=0.35,
+        help="对齐匹配代价上限，超过则跳过该笔画对；0 表示不过滤",
+    )
     train_p.add_argument("--lr", type=float, default=1e-3)
     train_p.add_argument("--seed", type=int, default=0)
     train_p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -746,7 +752,12 @@ def _cmd_train(args: argparse.Namespace) -> int:
             if not pairs:
                 print("错误：没有可对齐的样本（检查字形缓存或 char_ranges）")
                 return EXIT_ERROR
-            examples = build_aligned_examples(pairs, args.n_points, args.smooth)
+            examples = build_aligned_examples(
+                pairs,
+                args.n_points,
+                args.smooth,
+                min_cost=args.min_align_cost if args.min_align_cost > 0 else None,
+            )
             source_label = f"{args.data}（已对齐）"
         else:
             payload = json.loads(args.data.read_text(encoding="utf-8"))

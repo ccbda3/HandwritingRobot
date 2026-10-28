@@ -105,6 +105,7 @@ python scripts/serve_dev.py --model data/exports/style-model.pt \
   （`char_width_cv` / `char_gap_cv` / `baseline_drift` / `baseline_slope`）自动估计。
 - 对齐用法：`handwriting train --data capture.json --align --offline`；
   1.0 单字与 2.0 整行都支持（2.0 需要 `charRanges` 才能切字）。
+  默认 `--min-align-cost 0.35` 会跳过匹配代价过高的笔画对；设为 0 关闭过滤。
 - 采集入口：App「工具 → 采集与训练…」或网页 `capture/index.html`；
   两者写出的 JSON 格式一致，App 内可直接训练并自动导出 weights。
 - 第 3 层骨架：`PenSequenceModel`（GRU + MDN）输入「下一段中心线 + 上一笔尖状态」，

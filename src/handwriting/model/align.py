@@ -101,9 +101,16 @@ def _stroke_cost(a: Stroke, b: Stroke) -> float:
 
 
 def align_stroke_sets(
-    captured: StrokeSet, reference: StrokeSet, n_points: int = 48
+    captured: StrokeSet,
+    reference: StrokeSet,
+    n_points: int = 48,
+    min_cost: float | None = None,
 ) -> list[AlignedStroke]:
-    """把标准骨架 ``reference`` 对齐到采集字 ``captured``。"""
+    """把标准骨架 ``reference`` 对齐到采集字 ``captured``。
+
+    ``min_cost`` 是匹配代价上限；超过的笔画对会被跳过（不参与训练），
+    用来过滤写坏/多写/少写的样本。``None`` 表示不过滤。
+    """
     if not captured.strokes or not reference.strokes:
         return []
 
@@ -121,6 +128,8 @@ def align_stroke_sets(
     aligned: list[AlignedStroke] = []
     for cost, i, j in candidates:
         if i in used_ref or j in used_cap:
+            continue
+        if min_cost is not None and cost > min_cost:
             continue
         used_ref.add(i)
         used_cap.add(j)
@@ -145,11 +154,12 @@ def build_aligned_examples(
     pairs: Sequence[tuple[StrokeSet, StrokeSet]],
     n_points: int = 48,
     smooth_window: int = 5,
+    min_cost: float | None = None,
 ) -> list[StrokeExample]:
     """``[(采集字, 标准骨架), ...]`` → 训练样本（中心线 = 标准骨架）。"""
     examples: list[StrokeExample] = []
     for captured, reference in pairs:
-        for aligned in align_stroke_sets(captured, reference, n_points):
+        for aligned in align_stroke_sets(captured, reference, n_points, min_cost):
             examples.append(
                 stroke_example(
                     aligned.target,
